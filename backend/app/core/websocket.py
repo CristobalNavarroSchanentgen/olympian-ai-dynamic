@@ -29,9 +29,11 @@ class WebSocketManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_metadata: Dict[str, Dict[str, Any]] = {}
+        self.active_streams: Dict[str, asyncio.Task] = {}  # Track active streaming tasks
         
         self._message_handlers = {
             "chat": self._handle_chat_message,
+            "stop_generation": self._handle_stop_generation,
             "config_update": self._handle_config_update,
             "service_discovery": self._handle_service_discovery,
             "project": self._handle_project_message,
@@ -52,7 +54,8 @@ class WebSocketManager:
             "connected_at": datetime.now(),
             "last_activity": datetime.now(),
             "project_id": None,
-            "active_model": None
+            "active_model": None,
+            "is_streaming": False
         }
         
         # Send welcome message with configuration
@@ -70,12 +73,22 @@ class WebSocketManager:
                 break
         
         if client_id:
+            # Cancel any active streams for this client
+            if client_id in self.active_streams:
+                self.active_streams[client_id].cancel()
+                del self.active_streams[client_id]
+            
             del self.active_connections[client_id]
             del self.connection_metadata[client_id]
             logger.info(f"🌙 Divine connection closed: {client_id}")
     
     async def disconnect_all(self):
         """Disconnect all active connections"""
+        # Cancel all active streams
+        for task in self.active_streams.values():
+            task.cancel()
+        self.active_streams.clear()
+        
         for client_id in list(self.active_connections.keys()):
             websocket = self.active_connections[client_id]
             await websocket.close()
@@ -107,6 +120,11 @@ class WebSocketManager:
     
     async def _handle_chat_message(self, client_id: str, message: Dict[str, Any]):
         """Handle chat messages"""
+        # Check if already streaming
+        if self.connection_metadata[client_id].get("is_streaming"):
+            await self.send_error(client_id, "Already processing a message. Please wait or stop the current generation.")
+            return
+        
         content = message.get("content", "")
         model = message.get("model") or self.connection_metadata[client_id].get("active_model")
         project_id = message.get("project_id") or self.connection_metadata[client_id].get("project_id")
@@ -123,6 +141,33 @@ class WebSocketManager:
             await self.send_error(client_id, "Ollama service not available")
             return
         
+        # Create and start streaming task
+        stream_task = asyncio.create_task(
+            self._stream_chat_response(client_id, model, content, system_prompt, project_id)
+        )
+        self.active_streams[client_id] = stream_task
+        self.connection_metadata[client_id]["is_streaming"] = True
+        
+        try:
+            await stream_task
+        except asyncio.CancelledError:
+            logger.info(f"🛑 Chat stream cancelled for {client_id}")
+            await self.send_message(client_id, {
+                "type": "chat_response",
+                "streaming": False,
+                "cancelled": True,
+                "timestamp": datetime.now().isoformat()
+            })
+        finally:
+            # Clean up
+            if client_id in self.active_streams:
+                del self.active_streams[client_id]
+            self.connection_metadata[client_id]["is_streaming"] = False
+    
+    async def _stream_chat_response(self, client_id: str, model: str, content: str, system_prompt: Optional[str], project_id: Optional[str]):
+        """Stream chat response from Ollama"""
+        ollama_service = get_ollama_service()
+        
         # Send typing indicator
         await self.send_message(client_id, {
             "type": "chat_status",
@@ -130,7 +175,6 @@ class WebSocketManager:
             "timestamp": datetime.now().isoformat()
         })
         
-        # Stream response from Ollama
         try:
             logger.info(f"🔮 Starting chat stream for {client_id} with model {model}")
             
@@ -141,29 +185,60 @@ class WebSocketManager:
                 system_prompt=system_prompt,
                 project_id=project_id
             ):
+                # Check if task was cancelled
+                if asyncio.current_task().cancelled():
+                    logger.info(f"🛑 Stream cancelled during generation for {client_id}")
+                    break
+                
                 response_chunks.append(chunk)
                 await self.send_message(client_id, {
                     "type": "chat_response",
                     "content": chunk,
                     "model": model,
                     "streaming": True,
+                    "can_stop": True,
                     "timestamp": datetime.now().isoformat()
                 })
             
-            # Send completion message
+            # Send completion message (only if not cancelled)
+            if not asyncio.current_task().cancelled():
+                await self.send_message(client_id, {
+                    "type": "chat_response",
+                    "streaming": False,
+                    "complete": True,
+                    "total_chunks": len(response_chunks),
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                logger.info(f"✅ Chat stream completed for {client_id}: {len(response_chunks)} chunks")
+        
+        except asyncio.CancelledError:
+            # Re-raise cancellation to be handled by caller
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error in chat stream for {client_id}: {e}")
+            await self.send_error(client_id, f"Chat error: {str(e)}")
+    
+    async def _handle_stop_generation(self, client_id: str, message: Dict[str, Any]):
+        """Handle stop generation requests"""
+        logger.info(f"🛑 Stop generation requested by {client_id}")
+        
+        if client_id in self.active_streams:
+            # Cancel the active stream
+            self.active_streams[client_id].cancel()
+            logger.info(f"🛑 Cancelled active stream for {client_id}")
+            
             await self.send_message(client_id, {
-                "type": "chat_response",
-                "streaming": False,
-                "complete": True,
-                "total_chunks": len(response_chunks),
+                "type": "generation_stopped",
+                "message": "Generation stopped by user",
                 "timestamp": datetime.now().isoformat()
             })
-            
-            logger.info(f"✅ Chat stream completed for {client_id}: {len(response_chunks)} chunks")
-        
-        except Exception as e:
-            logger.error(f"❌ Error in chat handler for {client_id}: {e}")
-            await self.send_error(client_id, f"Chat error: {str(e)}")
+        else:
+            await self.send_message(client_id, {
+                "type": "generation_stopped",
+                "message": "No active generation to stop",
+                "timestamp": datetime.now().isoformat()
+            })
     
     async def _handle_config_update(self, client_id: str, message: Dict[str, Any]):
         """Handle configuration updates"""
@@ -309,6 +384,7 @@ class WebSocketManager:
             stats = {
                 "connected_clients": len(self.active_connections),
                 "active_services": settings.get_active_services(),
+                "active_streams": len(self.active_streams),
                 "uptime": "calculating...",  # Would calculate actual uptime
                 "timestamp": datetime.now().isoformat()
             }
@@ -328,7 +404,11 @@ class WebSocketManager:
             "config": {
                 "discovered_services": settings.discovered_services,
                 "user_preferences": safe_model_dump(settings.user_preferences),
-                "active_services": settings.get_active_services()
+                "active_services": settings.get_active_services(),
+                "features": {
+                    "can_stop_generation": True,
+                    "streaming_chat": True
+                }
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -375,6 +455,13 @@ class WebSocketManager:
             if ws == websocket:
                 return client_id
         return None
+    
+    def get_client_stream_status(self, client_id: str) -> Dict[str, Any]:
+        """Get streaming status for a client"""
+        return {
+            "is_streaming": self.connection_metadata.get(client_id, {}).get("is_streaming", False),
+            "has_active_stream": client_id in self.active_streams
+        }
     
     async def notify_service_update(self, service_type: str, status: str, details: Dict[str, Any]):
         """Notify all clients about service updates"""
