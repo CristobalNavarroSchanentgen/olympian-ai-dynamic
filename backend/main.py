@@ -85,6 +85,7 @@ async def root():
             "redoc": "/redoc",
             "health": "/health",
             "websocket": "/ws/{client_id}",
+            "websocket_auto": "/ws",
             "api": {
                 "chat": "/api/chat",
                 "ollama": "/api/ollama",
@@ -121,11 +122,17 @@ app.include_router(discovery.router, prefix="/api/discovery", tags=["discovery"]
 app.include_router(mcp.router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 
-# Add WebSocket endpoint
+# Add WebSocket endpoints - both with and without client_id
 @app.websocket("/ws/{client_id}")
-async def websocket_route(websocket, client_id: str = None):
-    """WebSocket endpoint for real-time communication"""
+async def websocket_route_with_id(websocket, client_id: str):
+    """WebSocket endpoint for real-time communication with specific client ID"""
     await websocket_endpoint(websocket, client_id)
+
+
+@app.websocket("/ws")
+async def websocket_route_auto_id(websocket):
+    """WebSocket endpoint for real-time communication with auto-generated client ID"""
+    await websocket_endpoint(websocket, None)
 
 
 # Global exception handler
