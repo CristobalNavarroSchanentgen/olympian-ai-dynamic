@@ -6,13 +6,10 @@ from datetime import datetime
 import uuid
 from loguru import logger
 
-from ..services.ollama_service import OllamaService
-from ..services.project_service import ProjectService
+from ..core.service_manager import get_ollama_service, get_project_service
 from ..core.config import settings
 
 router = APIRouter()
-ollama_service = OllamaService()
-project_service = ProjectService()
 
 
 class ChatMessage(BaseModel):
@@ -50,6 +47,10 @@ conversations: Dict[str, Dict[str, Any]] = {}
 @router.post("/message")
 async def send_chat_message(request: ChatRequest):
     """Send a chat message and get response"""
+    ollama_service = get_ollama_service()
+    if not ollama_service:
+        raise HTTPException(status_code=503, detail="Ollama service not available")
+    
     # Create or get conversation
     if request.conversation_id:
         if request.conversation_id not in conversations:
@@ -79,7 +80,8 @@ async def send_chat_message(request: ChatRequest):
     
     # Get context from project if applicable
     context = []
-    if request.project_id:
+    project_service = get_project_service()
+    if request.project_id and project_service:
         project = await project_service.get_project(request.project_id)
         if project and project.get("context"):
             context = project["context"]
@@ -283,9 +285,13 @@ async def get_recommended_models():
         "powerful": []
     }
     
-    # Get available models
-    available_models = settings.discovered_services.ollama.get("models", [])
-    model_names = [m["name"] for m in available_models]
+    # Get available models from discovered services
+    available_models = []
+    if "ollama" in settings.discovered_services:
+        ollama_data = settings.discovered_services["ollama"]
+        available_models = ollama_data.get("models", [])
+    
+    model_names = [m.get("name", "") for m in available_models if isinstance(m, dict)]
     
     # Categorize based on system resources
     if memory_gb >= 32:
@@ -311,6 +317,10 @@ async def get_recommended_models():
 @router.post("/regenerate/{conversation_id}")
 async def regenerate_last_response(conversation_id: str):
     """Regenerate the last assistant response in a conversation"""
+    ollama_service = get_ollama_service()
+    if not ollama_service:
+        raise HTTPException(status_code=503, detail="Ollama service not available")
+    
     if conversation_id not in conversations:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
