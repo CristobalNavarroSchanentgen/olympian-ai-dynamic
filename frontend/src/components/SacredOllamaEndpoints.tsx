@@ -281,10 +281,8 @@ const SacredOllamaEndpoints: React.FC<SacredOllamaEndpointsProps> = ({ className
 
   const setPrimary = async (url: string) => {
     try {
-      const response = await fetch('/api/ollama/config/endpoints/set-primary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint_url: url })
+      const response = await fetch(`/api/ollama/config/endpoints/set-primary?endpoint_url=${encodeURIComponent(url)}`, {
+        method: 'POST'
       })
       
       if (!response.ok) throw new Error('Failed to set primary')
