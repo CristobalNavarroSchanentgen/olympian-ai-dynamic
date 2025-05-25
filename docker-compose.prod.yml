@@ -1,0 +1,275 @@
+version: '3.8'
+
+services:
+  # Frontend Service - Production
+  frontend:
+    image: olympian-frontend:latest
+    container_name: olympian-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_URL=${API_URL:-https://api.olympian-ai.com}
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - olympian-network
+    restart: always
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx-cache:/var/cache/nginx
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API Service - Production
+  backend:
+    image: olympian-backend:latest
+    container_name: olympian-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DATABASE=${MONGODB_DATABASE:-olympian_ai}
+      - MONGODB_USERNAME=${MONGODB_USERNAME}
+      - MONGODB_PASSWORD=${MONGODB_PASSWORD}
+      - DISCOVERY_ENABLED=true
+      - JWT_SECRET=${JWT_SECRET}
+      - DEBUG=false
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./backend/config.yaml:/app/config.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - olympian-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # MongoDB for persistence - Production
+  mongodb:
+    image: mongo:7.0
+    container_name: olympian-mongodb
+    ports:
+      - "127.0.0.1:27017:27017"  # Only bind to localhost
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGODB_DATABASE:-olympian_ai}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD}
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - ./backups/mongodb:/backup
+    networks:
+      - olympian-network
+    restart: always
+    command: mongod --auth --wiredTigerCacheSizeGB 4 --bind_ip_all
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Redis for caching - Production
+  redis:
+    image: redis:7-alpine
+    container_name: olympian-redis
+    ports:
+      - "127.0.0.1:6379:6379"  # Only bind to localhost
+    volumes:
+      - redis-data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - olympian-network
+    restart: always
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Ollama LLM Service - Production
+  ollama:
+    image: ollama/ollama:latest
+    container_name: olympian-ollama
+    ports:
+      - "127.0.0.1:11434:11434"  # Only bind to localhost
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_MODELS=/root/.ollama/models
+    networks:
+      - olympian-network
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # Nginx Reverse Proxy
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: olympian-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - olympian-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: olympian-prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - olympian-network
+    restart: always
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: olympian-grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - olympian-network
+    restart: always
+
+  # Log Aggregation - Loki
+  loki:
+    image: grafana/loki:latest
+    container_name: olympian-loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./config/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - olympian-network
+    restart: always
+
+  # Log Shipper - Promtail
+  promtail:
+    image: grafana/promtail:latest
+    container_name: olympian-promtail
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - olympian-network
+    restart: always
+
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+  redis-data:
+    driver: local
+  ollama-data:
+    driver: local
+  nginx-cache:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+
+networks:
+  olympian-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
