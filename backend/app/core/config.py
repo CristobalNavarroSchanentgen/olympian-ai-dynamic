@@ -7,6 +7,14 @@ import yaml
 from pathlib import Path
 
 
+class UserPreferences(BaseSettings):
+    """User preferences model"""
+    preferred_models: List[str] = Field(default_factory=list)
+    custom_endpoints: List[str] = Field(default_factory=list)
+    disabled_services: List[str] = Field(default_factory=list)
+    manual_overrides: Dict[str, Any] = Field(default_factory=dict)
+
+
 class Settings(BaseSettings):
     """Application settings with divine configuration"""
     
@@ -102,6 +110,9 @@ class Settings(BaseSettings):
         env="MAX_UPLOAD_SIZE"
     )
     
+    # User preferences
+    user_preferences: UserPreferences = Field(default_factory=UserPreferences)
+    
     # Discovered services (runtime)
     discovered_services: Dict[str, Any] = Field(default_factory=dict)
     
@@ -115,16 +126,6 @@ class Settings(BaseSettings):
     def data_dir(self) -> Path:
         """Get data directory as Path object"""
         return Path(self.data_directory)
-    
-    @property
-    def user_preferences(self):
-        """Get user preferences - placeholder for now"""
-        return {
-            "preferred_models": [],
-            "custom_endpoints": [],
-            "disabled_services": [],
-            "manual_overrides": {}
-        }
     
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -167,8 +168,14 @@ class Settings(BaseSettings):
                     
                     # Update settings with config file data
                     for key, value in config_data.items():
-                        if hasattr(self, key):
-                            setattr(self, key, value)
+                        # Skip properties and read-only attributes
+                        if hasattr(self, key) and not key.startswith('_'):
+                            try:
+                                setattr(self, key, value)
+                            except (AttributeError, TypeError) as e:
+                                # Skip properties without setters
+                                print(f"Skipping config key '{key}': {e}")
+                                continue
             except Exception as e:
                 print(f"Error loading config file: {e}")
     
