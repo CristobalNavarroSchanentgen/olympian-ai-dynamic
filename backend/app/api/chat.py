@@ -7,6 +7,7 @@ import uuid
 from loguru import logger
 
 from ..core.service_manager import get_ollama_service, get_project_service
+from ..core.websocket import ws_manager
 from ..core.config import settings
 
 router = APIRouter()
@@ -38,6 +39,11 @@ class ConversationCreate(BaseModel):
     project_id: Optional[str] = None
     model: str
     system_prompt: Optional[str] = None
+
+
+class StopRequest(BaseModel):
+    """Stop generation request model"""
+    client_id: str
 
 
 # In-memory conversation storage (would use database in production)
@@ -128,6 +134,38 @@ async def send_chat_message(request: ChatRequest):
             "streaming": True,
             "message": "Use WebSocket connection for streaming response"
         }
+
+
+@router.post("/stop")
+async def stop_generation(request: StopRequest):
+    """Stop ongoing generation for a client"""
+    client_status = ws_manager.get_client_stream_status(request.client_id)
+    
+    if not client_status["has_active_stream"]:
+        raise HTTPException(status_code=400, detail="No active generation to stop")
+    
+    # Send stop message via WebSocket manager
+    await ws_manager._handle_stop_generation(request.client_id, {"type": "stop_generation"})
+    
+    return {
+        "status": "stopped",
+        "client_id": request.client_id,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@router.get("/status/{client_id}")
+async def get_chat_status(client_id: str):
+    """Get chat status for a client"""
+    status = ws_manager.get_client_stream_status(client_id)
+    
+    return {
+        "client_id": client_id,
+        "is_streaming": status["is_streaming"],
+        "has_active_stream": status["has_active_stream"],
+        "can_stop": status["has_active_stream"],
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @router.post("/conversations")
