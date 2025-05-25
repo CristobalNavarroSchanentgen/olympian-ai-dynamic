@@ -2,7 +2,7 @@
 import os
 from typing import List, Dict, Any, Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator, field_validator
+from pydantic import Field, field_validator
 import yaml
 from pathlib import Path
 
@@ -85,7 +85,8 @@ class Settings(BaseSettings):
         case_sensitive = False
     
     @field_validator("cors_origins", mode="before")
-    @classmethod    def parse_cors_origins(cls, v):
+    @classmethod
+    def parse_cors_origins(cls, v):
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
             # Try to parse as JSON first
@@ -110,7 +111,8 @@ class Settings(BaseSettings):
         # Default fallback
         return ["http://localhost:3000", "http://localhost:5173"]
     
-    @validator("mcp_servers", pre=True)
+    @field_validator("mcp_servers", mode="before")
+    @classmethod
     def load_mcp_servers(cls, v):
         """Load MCP servers from config file if not provided"""
         if not v:
