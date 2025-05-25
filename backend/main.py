@@ -4,7 +4,7 @@ Divine intelligence meets mortal ambition
 """
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -124,13 +124,13 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 
 # Add WebSocket endpoints - both with and without client_id
 @app.websocket("/ws/{client_id}")
-async def websocket_route_with_id(websocket, client_id: str):
+async def websocket_route_with_id(websocket: WebSocket, client_id: str):
     """WebSocket endpoint for real-time communication with specific client ID"""
     await websocket_endpoint(websocket, client_id)
 
 
 @app.websocket("/ws")
-async def websocket_route_auto_id(websocket):
+async def websocket_route_auto_id(websocket: WebSocket):
     """WebSocket endpoint for real-time communication with auto-generated client ID"""
     await websocket_endpoint(websocket, None)
 
