@@ -116,6 +116,16 @@ class Settings(BaseSettings):
         """Get data directory as Path object"""
         return Path(self.data_directory)
     
+    @property
+    def user_preferences(self):
+        """Get user preferences - placeholder for now"""
+        return {
+            "preferred_models": [],
+            "custom_endpoints": [],
+            "disabled_services": [],
+            "manual_overrides": {}
+        }
+    
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
@@ -162,6 +172,11 @@ class Settings(BaseSettings):
             except Exception as e:
                 print(f"Error loading config file: {e}")
     
+    def save_config(self):
+        """Save configuration - placeholder for now"""
+        # This would typically save to a config file or database
+        pass
+    
     def get_ollama_models(self) -> List[str]:
         """Get list of preferred Ollama models"""
         return self.discovered_services.get("ollama", {}).get("models", [])
@@ -171,6 +186,29 @@ class Settings(BaseSettings):
         if isinstance(self.ollama_endpoints, list):
             return self.ollama_endpoints
         return [self.ollama_base_url]
+    
+    def get_active_services(self) -> List[str]:
+        """Get list of active services"""
+        active = []
+        if self.discovered_services.get("ollama"):
+            active.append("ollama")
+        if self.discovered_services.get("redis"):
+            active.append("redis")
+        if self.mcp_enabled:
+            active.append("mcp")
+        return active
+    
+    def add_cors_origin(self, origin: str):
+        """Add a new CORS origin"""
+        if isinstance(self.cors_origins, list):
+            if origin not in self.cors_origins:
+                self.cors_origins.append(origin)
+        else:
+            # Convert string to list and add
+            origins = [o.strip() for o in self.cors_origins.split(",")]
+            if origin not in origins:
+                origins.append(origin)
+                self.cors_origins = origins
     
     def is_production(self) -> bool:
         """Check if running in production"""
