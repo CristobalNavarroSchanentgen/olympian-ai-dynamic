@@ -2,7 +2,8 @@
 # Divine automation for mortal tasks
 
 .PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend \
-        test test-backend test-frontend lint format build deploy clean
+        test test-backend test-frontend test-coverage test-watch lint format \
+        build deploy clean test-unit test-integration
 
 # Default target
 .DEFAULT_GOAL := help
@@ -87,16 +88,52 @@ docker-down:
 	@echo "${BLUE}Stopping Docker services...${NC}"
 	$(DOCKER_COMPOSE) down
 
-## test: Run all tests
+## test: Run all tests with coverage
 test: test-backend test-frontend
 	@echo "${GREEN}✓ All tests passed!${NC}"
 
-## test-backend: Run backend tests
+## test-backend: Run backend tests with coverage
 test-backend:
 	@echo "${BLUE}Running backend tests...${NC}"
 	cd backend && \
 	. .venv/bin/activate && \
-	pytest -v
+	python tests/run_tests.py
+
+## test-unit: Run only unit tests
+test-unit:
+	@echo "${BLUE}Running unit tests...${NC}"
+	cd backend && \
+	. .venv/bin/activate && \
+	python tests/run_tests.py --unit
+
+## test-integration: Run only integration tests
+test-integration:
+	@echo "${BLUE}Running integration tests...${NC}"
+	cd backend && \
+	. .venv/bin/activate && \
+	python tests/run_tests.py --integration
+
+## test-coverage: Run tests and open coverage report
+test-coverage:
+	@echo "${BLUE}Running tests with coverage report...${NC}"
+	cd backend && \
+	. .venv/bin/activate && \
+	python tests/run_tests.py && \
+	open htmlcov/index.html
+
+## test-watch: Run tests in watch mode
+test-watch:
+	@echo "${BLUE}Running tests in watch mode...${NC}"
+	cd backend && \
+	. .venv/bin/activate && \
+	ptw -- -v
+
+## test-file: Run a specific test file (usage: make test-file FILE=test_chat_api.py)
+test-file:
+	@echo "${BLUE}Running test file: $(FILE)${NC}"
+	cd backend && \
+	. .venv/bin/activate && \
+	pytest tests/$(FILE) -v
 
 ## test-frontend: Run frontend tests
 test-frontend:
@@ -146,7 +183,7 @@ build:
 ## clean: Clean all generated files and dependencies
 clean:
 	@echo "${RED}Cleaning all generated files...${NC}"
-	cd backend && rm -rf .venv __pycache__ .pytest_cache .mypy_cache data logs
+	cd backend && rm -rf .venv __pycache__ .pytest_cache .mypy_cache data logs htmlcov .coverage
 	cd frontend && rm -rf node_modules dist
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -delete
