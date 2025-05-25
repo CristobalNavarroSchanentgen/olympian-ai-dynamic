@@ -29,10 +29,22 @@ class ServiceOverride(BaseModel):
 @router.get("/dynamic")
 async def get_dynamic_configuration():
     """Get current dynamic configuration"""
+    # Build server info from individual settings attributes
+    server_info = {
+        "host": settings.server_host,
+        "port": settings.server_port,
+        "environment": settings.environment,
+        "debug": settings.debug,
+        "discovery": {
+            "enabled": settings.is_service_discovery_enabled(),
+            "scan_interval": settings.get_effective_scan_interval()
+        }
+    }
+    
     return {
-        "server": settings.server.dict(),
-        "discovered_services": settings.discovered_services.dict(),
-        "user_preferences": settings.user_preferences.dict(),
+        "server": server_info,
+        "discovered_services": settings.discovered_services,
+        "user_preferences": settings.user_preferences.model_dump(),
         "active_services": settings.get_active_services(),
         "timestamp": datetime.now().isoformat()
     }
@@ -42,7 +54,7 @@ async def get_dynamic_configuration():
 async def get_user_preferences():
     """Get user preferences"""
     return {
-        "preferences": settings.user_preferences.dict(),
+        "preferences": settings.user_preferences.model_dump(),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -74,12 +86,12 @@ async def update_user_preferences(preferences: PreferencesUpdate):
         # Notify all connected clients
         await ws_manager.notify_config_change(
             "preferences",
-            settings.user_preferences.dict()
+            settings.user_preferences.model_dump()
         )
     
     return {
         "status": "updated" if updated else "no_changes",
-        "preferences": settings.user_preferences.dict(),
+        "preferences": settings.user_preferences.model_dump(),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -170,10 +182,16 @@ async def remove_cors_origin(origin: str):
 @router.get("/discovery")
 async def get_discovery_config():
     """Get service discovery configuration"""
+    discovery_config = {
+        "enabled": settings.is_service_discovery_enabled(),
+        "scan_interval": settings.get_effective_scan_interval(),
+        "network_ranges": []  # Could be added to settings later
+    }
+    
     return {
-        "config": settings.server.discovery.dict(),
-        "enabled": settings.server.discovery.enabled,
-        "scan_interval": settings.server.discovery.scan_interval
+        "config": discovery_config,
+        "enabled": discovery_config["enabled"],
+        "scan_interval": discovery_config["scan_interval"]
     }
 
 
@@ -187,29 +205,31 @@ async def update_discovery_config(
     updated = False
     
     if enabled is not None:
-        settings.server.discovery.enabled = enabled
+        settings.discovery_enabled = enabled
         updated = True
     
     if scan_interval is not None and scan_interval > 0:
-        settings.server.discovery.scan_interval = scan_interval
+        settings.discovery_scan_interval = scan_interval
         updated = True
     
-    if network_ranges is not None:
-        settings.server.discovery.network_ranges = network_ranges
-        updated = True
+    # Note: network_ranges would need to be added to the Settings model
     
     if updated:
         settings.save_config()
         
         # Notify clients
-        await ws_manager.notify_config_change(
-            "discovery",
-            settings.server.discovery.dict()
-        )
+        discovery_config = {
+            "enabled": settings.is_service_discovery_enabled(),
+            "scan_interval": settings.get_effective_scan_interval()
+        }
+        await ws_manager.notify_config_change("discovery", discovery_config)
     
     return {
         "status": "updated" if updated else "no_changes",
-        "config": settings.server.discovery.dict(),
+        "config": {
+            "enabled": settings.is_service_discovery_enabled(),
+            "scan_interval": settings.get_effective_scan_interval()
+        },
         "timestamp": datetime.now().isoformat()
     }
 
@@ -220,21 +240,20 @@ async def reset_configuration(section: Optional[str] = None):
     if section == "preferences":
         settings.user_preferences = settings.user_preferences.__class__()
     elif section == "discovery":
-        settings.server.discovery = settings.server.discovery.__class__()
+        settings.discovery_enabled = True
+        settings.discovery_scan_interval = 30
     elif section == "all":
         # Reset everything except discovered services
         settings.user_preferences = settings.user_preferences.__class__()
-        settings.server.discovery = settings.server.discovery.__class__()
+        settings.discovery_enabled = True
+        settings.discovery_scan_interval = 30
     else:
         raise HTTPException(status_code=400, detail="Invalid section. Use 'preferences', 'discovery', or 'all'")
     
     settings.save_config()
     
     # Notify clients
-    await ws_manager.notify_config_change(
-        "reset",
-        {"section": section}
-    )
+    await ws_manager.notify_config_change("reset", {"section": section})
     
     return {
         "status": "reset",
@@ -250,10 +269,23 @@ async def export_configuration():
         "version": "1.0.0",
         "exported_at": datetime.now().isoformat(),
         "configuration": {
-            "server": settings.server.dict(),
-            "security": {k: v for k, v in settings.security.dict().items() if k != "jwt_secret"},
-            "user_preferences": settings.user_preferences.dict(),
-            "discovered_services": settings.discovered_services.dict(),
+            "server": {
+                "host": settings.server_host,
+                "port": settings.server_port,
+                "environment": settings.environment,
+                "debug": settings.debug,
+                "discovery": {
+                    "enabled": settings.is_service_discovery_enabled(),
+                    "scan_interval": settings.get_effective_scan_interval()
+                }
+            },
+            "security": {
+                "jwt_algorithm": settings.jwt_algorithm,
+                "jwt_expiration_minutes": settings.jwt_expiration_minutes
+                # Exclude jwt_secret for security
+            },
+            "user_preferences": settings.user_preferences.model_dump(),
+            "discovered_services": settings.discovered_services,
             "cors_origins": settings.cors_origins
         }
     }
@@ -272,7 +304,8 @@ async def import_configuration(config: Dict[str, Any]):
         # Import user preferences
         if "user_preferences" in configuration:
             for key, value in configuration["user_preferences"].items():
-                setattr(settings.user_preferences, key, value)
+                if hasattr(settings.user_preferences, key):
+                    setattr(settings.user_preferences, key, value)
         
         # Import CORS origins
         if "cors_origins" in configuration:
@@ -280,8 +313,11 @@ async def import_configuration(config: Dict[str, Any]):
         
         # Import discovery settings
         if "server" in configuration and "discovery" in configuration["server"]:
-            for key, value in configuration["server"]["discovery"].items():
-                setattr(settings.server.discovery, key, value)
+            discovery_config = configuration["server"]["discovery"]
+            if "enabled" in discovery_config:
+                settings.discovery_enabled = discovery_config["enabled"]
+            if "scan_interval" in discovery_config:
+                settings.discovery_scan_interval = discovery_config["scan_interval"]
         
         settings.save_config()
         
