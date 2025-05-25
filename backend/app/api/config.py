@@ -1,6 +1,6 @@
 """Configuration API Routes - Divine Settings Management"""
 from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 from datetime import datetime
 from loguru import logger
