@@ -26,6 +26,18 @@ class ServiceOverride(BaseModel):
     config: Dict[str, Any]
 
 
+def safe_model_dump(obj):
+    """Safely get dict representation of Pydantic model or return dict as-is"""
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    elif hasattr(obj, 'dict'):
+        return obj.dict()
+    elif isinstance(obj, dict):
+        return obj
+    else:
+        return {}
+
+
 @router.get("/dynamic")
 async def get_dynamic_configuration():
     """Get current dynamic configuration"""
@@ -44,7 +56,7 @@ async def get_dynamic_configuration():
     return {
         "server": server_info,
         "discovered_services": settings.discovered_services,
-        "user_preferences": settings.user_preferences.model_dump(),
+        "user_preferences": safe_model_dump(settings.user_preferences),
         "active_services": settings.get_active_services(),
         "timestamp": datetime.now().isoformat()
     }
@@ -54,7 +66,7 @@ async def get_dynamic_configuration():
 async def get_user_preferences():
     """Get user preferences"""
     return {
-        "preferences": settings.user_preferences.model_dump(),
+        "preferences": safe_model_dump(settings.user_preferences),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -63,6 +75,11 @@ async def get_user_preferences():
 async def update_user_preferences(preferences: PreferencesUpdate):
     """Update user preferences"""
     updated = False
+    
+    # Ensure user_preferences is a proper model instance
+    if isinstance(settings.user_preferences, dict):
+        from ..core.config import UserPreferences
+        settings.user_preferences = UserPreferences(**settings.user_preferences)
     
     if preferences.preferred_models is not None:
         settings.user_preferences.preferred_models = preferences.preferred_models
@@ -86,12 +103,12 @@ async def update_user_preferences(preferences: PreferencesUpdate):
         # Notify all connected clients
         await ws_manager.notify_config_change(
             "preferences",
-            settings.user_preferences.model_dump()
+            safe_model_dump(settings.user_preferences)
         )
     
     return {
         "status": "updated" if updated else "no_changes",
-        "preferences": settings.user_preferences.model_dump(),
+        "preferences": safe_model_dump(settings.user_preferences),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -99,6 +116,11 @@ async def update_user_preferences(preferences: PreferencesUpdate):
 @router.post("/override")
 async def add_service_override(override: ServiceOverride):
     """Add a manual service override"""
+    # Ensure user_preferences is a proper model instance
+    if isinstance(settings.user_preferences, dict):
+        from ..core.config import UserPreferences
+        settings.user_preferences = UserPreferences(**settings.user_preferences)
+    
     # Add to manual overrides
     settings.user_preferences.manual_overrides[override.service_type] = override.config
     settings.save_config()
@@ -123,6 +145,11 @@ async def add_service_override(override: ServiceOverride):
 @router.delete("/override/{service_type}")
 async def remove_service_override(service_type: str):
     """Remove a service override"""
+    # Ensure user_preferences is a proper model instance
+    if isinstance(settings.user_preferences, dict):
+        from ..core.config import UserPreferences
+        settings.user_preferences = UserPreferences(**settings.user_preferences)
+    
     if service_type in settings.user_preferences.manual_overrides:
         del settings.user_preferences.manual_overrides[service_type]
         settings.save_config()
@@ -238,13 +265,15 @@ async def update_discovery_config(
 async def reset_configuration(section: Optional[str] = None):
     """Reset configuration to defaults"""
     if section == "preferences":
-        settings.user_preferences = settings.user_preferences.__class__()
+        from ..core.config import UserPreferences
+        settings.user_preferences = UserPreferences()
     elif section == "discovery":
         settings.discovery_enabled = True
         settings.discovery_scan_interval = 30
     elif section == "all":
         # Reset everything except discovered services
-        settings.user_preferences = settings.user_preferences.__class__()
+        from ..core.config import UserPreferences
+        settings.user_preferences = UserPreferences()
         settings.discovery_enabled = True
         settings.discovery_scan_interval = 30
     else:
@@ -284,7 +313,7 @@ async def export_configuration():
                 "jwt_expiration_minutes": settings.jwt_expiration_minutes
                 # Exclude jwt_secret for security
             },
-            "user_preferences": settings.user_preferences.model_dump(),
+            "user_preferences": safe_model_dump(settings.user_preferences),
             "discovered_services": settings.discovered_services,
             "cors_origins": settings.cors_origins
         }
@@ -303,9 +332,8 @@ async def import_configuration(config: Dict[str, Any]):
         
         # Import user preferences
         if "user_preferences" in configuration:
-            for key, value in configuration["user_preferences"].items():
-                if hasattr(settings.user_preferences, key):
-                    setattr(settings.user_preferences, key, value)
+            from ..core.config import UserPreferences
+            settings.user_preferences = UserPreferences(**configuration["user_preferences"])
         
         # Import CORS origins
         if "cors_origins" in configuration:
