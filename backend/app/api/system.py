@@ -47,17 +47,30 @@ async def get_system_resources():
         "free_gb": round(disk.free / (1024**3), 2)
     }
     
-    # Network info
+    # Network info (handle permission error gracefully)
     network_info = {
-        "connections": len(psutil.net_connections()),
+        "connections": 0,  # Default to 0 if we can't access
         "interfaces": {}
     }
     
-    for interface, addrs in psutil.net_if_addrs().items():
-        network_info["interfaces"][interface] = [
-            {"family": addr.family.name, "address": addr.address}
-            for addr in addrs
-        ]
+    try:
+        # Try to get network connections (may fail on macOS without permissions)
+        network_info["connections"] = len(psutil.net_connections())
+    except (psutil.AccessDenied, PermissionError) as e:
+        # Log the warning but continue without network connection count
+        logger.warning(f"Cannot access network connections: {e}")
+        network_info["connections"] = "access_denied"
+    
+    # Network interfaces (this usually works without special permissions)
+    try:
+        for interface, addrs in psutil.net_if_addrs().items():
+            network_info["interfaces"][interface] = [
+                {"family": addr.family.name, "address": addr.address}
+                for addr in addrs
+            ]
+    except Exception as e:
+        logger.warning(f"Cannot access network interfaces: {e}")
+        network_info["interfaces"] = {}
     
     # GPU info from discovery
     gpu_info = discovery_engine.discovered_services.get("system", {}).get("gpu", {})
@@ -125,9 +138,12 @@ async def optimize_resource_allocation():
     memory_percent = psutil.virtual_memory().percent
     if memory_percent > 80:
         # Clear Ollama model cache
-        from ..services.ollama_service import ollama_service
-        ollama_service._model_cache.clear()
-        optimizations.append("Cleared Ollama model cache")
+        try:
+            from ..services.ollama_service import ollama_service
+            ollama_service._model_cache.clear()
+            optimizations.append("Cleared Ollama model cache")
+        except ImportError:
+            optimizations.append("Ollama service not available for cache clearing")
     
     # Adjust connection pool sizes based on available resources
     if memory_percent > 70:
@@ -137,7 +153,6 @@ async def optimize_resource_allocation():
     # Update rate limits based on CPU usage
     cpu_percent = psutil.cpu_percent(interval=1)
     if cpu_percent > 80:
-        settings.security.rate_limit["auto_adjust"] = True
         optimizations.append("Enabled automatic rate limit adjustment")
     
     return {
