@@ -15,7 +15,8 @@ import {
   AlertCircle,
   Zap,
   Shield,
-  Globe
+  Globe,
+  Server
 } from 'lucide-react'
 import { useConfig } from '@/contexts/ConfigContext'
 import { discoveryAPI, configAPI } from '@/lib/api'
@@ -31,6 +32,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
+import SacredOllamaEndpoints from '@/components/SacredOllamaEndpoints'
 
 interface ServiceStatus {
   type: string
@@ -207,8 +209,8 @@ export default function DynamicConfiguration() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-3xl font-divine font-bold">Divine Configuration</h1>
-          <p className="text-gray-400 mt-1">Dynamic service discovery and configuration</p>
+          <h1 className="text-3xl font-divine font-bold">Sacred Configuration</h1>
+          <p className="text-gray-400 mt-1">Divine service discovery and endpoint management</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -248,13 +250,24 @@ export default function DynamicConfiguration() {
       )}
 
       {/* Service Tabs */}
-      <Tabs defaultValue="services" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4 bg-zeus-dark/50">
+      <Tabs defaultValue="ollama" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-5 bg-zeus-dark/50">
+          <TabsTrigger value="ollama">Sacred Ollama</TabsTrigger>
           <TabsTrigger value="services">Services</TabsTrigger>
           <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
+
+        {/* Sacred Ollama Management Tab */}
+        <TabsContent value="ollama">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <SacredOllamaEndpoints />
+          </motion.div>
+        </TabsContent>
 
         {/* Services Tab */}
         <TabsContent value="services">
@@ -413,6 +426,16 @@ export default function DynamicConfiguration() {
                     </div>
                   </div>
                 )}
+
+                {/* Note about Sacred Ollama Tab */}
+                <Alert className="border-olympus-gold/40 bg-olympus-gold/10">
+                  <Server className="h-4 w-4" />
+                  <AlertTitle>Enhanced Ollama Management</AlertTitle>
+                  <AlertDescription>
+                    For advanced Ollama endpoint configuration, connectivity testing, and priority management, 
+                    visit the <strong>Sacred Ollama</strong> tab above.
+                  </AlertDescription>
+                </Alert>
               </div>
             </CardContent>
           </Card>
