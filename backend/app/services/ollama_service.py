@@ -18,7 +18,13 @@ class OllamaService:
     
     async def initialize(self):
         """Initialize Ollama service with discovered endpoints"""
-        endpoints = settings.discovered_services.ollama.get("endpoints", [])
+        # Fix: access discovered_services as a dictionary
+        ollama_config = settings.discovered_services.get("ollama", {})
+        endpoints = ollama_config.get("endpoints", [])
+        
+        # If no discovered endpoints, use the configured ones
+        if not endpoints:
+            endpoints = settings.get_ollama_endpoints()
         
         for endpoint in endpoints:
             self._clients[endpoint] = httpx.AsyncClient(
