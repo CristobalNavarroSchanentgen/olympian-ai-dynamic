@@ -185,11 +185,7 @@ class WebSocketManager:
                 system_prompt=system_prompt,
                 project_id=project_id
             ):
-                # Check if task was cancelled
-                if asyncio.current_task().cancelled():
-                    logger.info(f"🛑 Stream cancelled during generation for {client_id}")
-                    break
-                
+                # This will raise CancelledError if cancelled - no need to check manually
                 response_chunks.append(chunk)
                 await self.send_message(client_id, {
                     "type": "chat_response",
@@ -201,19 +197,19 @@ class WebSocketManager:
                 })
             
             # Send completion message (only if not cancelled)
-            if not asyncio.current_task().cancelled():
-                await self.send_message(client_id, {
-                    "type": "chat_response",
-                    "streaming": False,
-                    "complete": True,
-                    "total_chunks": len(response_chunks),
-                    "timestamp": datetime.now().isoformat()
-                })
-                
-                logger.info(f"✅ Chat stream completed for {client_id}: {len(response_chunks)} chunks")
+            await self.send_message(client_id, {
+                "type": "chat_response",
+                "streaming": False,
+                "complete": True,
+                "total_chunks": len(response_chunks),
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            logger.info(f"✅ Chat stream completed for {client_id}: {len(response_chunks)} chunks")
         
         except asyncio.CancelledError:
             # Re-raise cancellation to be handled by caller
+            logger.info(f"🛑 Stream generation cancelled for {client_id}")
             raise
         except Exception as e:
             logger.error(f"❌ Error in chat stream for {client_id}: {e}")
