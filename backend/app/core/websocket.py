@@ -12,6 +12,18 @@ from ..services.ollama_service import OllamaService
 from ..services.mcp_service import MCPService
 
 
+def safe_model_dump(obj):
+    """Safely get dict representation of Pydantic model or return dict as-is"""
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    elif hasattr(obj, 'dict'):
+        return obj.dict()
+    elif isinstance(obj, dict):
+        return obj
+    else:
+        return {}
+
+
 class WebSocketManager:
     """Manages WebSocket connections and message routing"""
     
@@ -160,6 +172,10 @@ class WebSocketManager:
         
         elif config_type == "preferences":
             # Update user preferences
+            if isinstance(settings.user_preferences, dict):
+                from .config import UserPreferences
+                settings.user_preferences = UserPreferences(**settings.user_preferences)
+            
             settings.user_preferences.preferred_models = config_data.get("preferred_models", [])
             settings.user_preferences.custom_endpoints = config_data.get("custom_endpoints", [])
             settings.save_config()
@@ -167,7 +183,7 @@ class WebSocketManager:
             await self.send_message(client_id, {
                 "type": "config_updated",
                 "config_type": "preferences",
-                "data": settings.user_preferences.model_dump(),
+                "data": safe_model_dump(settings.user_preferences),
                 "timestamp": datetime.now().isoformat()
             })
     
@@ -291,7 +307,7 @@ class WebSocketManager:
             "message": "Welcome to Olympian AI - The Divine Interface",
             "config": {
                 "discovered_services": settings.discovered_services,
-                "user_preferences": settings.user_preferences.model_dump(),
+                "user_preferences": safe_model_dump(settings.user_preferences),
                 "active_services": settings.get_active_services()
             },
             "timestamp": datetime.now().isoformat()
@@ -362,9 +378,11 @@ ws_manager = WebSocketManager()
 
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
     """WebSocket endpoint for real-time communication"""
+    actual_client_id = None
     try:
         # Connect the client
         actual_client_id = await ws_manager.connect(websocket, client_id)
+        logger.info(f"WebSocket connected: {actual_client_id}")
         
         # Handle messages
         while True:
@@ -388,7 +406,14 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
     
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
+        # Try to send error if connection was established
+        if actual_client_id:
+            try:
+                await ws_manager.send_error(actual_client_id, f"Connection error: {str(e)}")
+            except:
+                pass
     
     finally:
         # Disconnect the client
-        ws_manager.disconnect(websocket)
+        if actual_client_id:
+            ws_manager.disconnect(websocket)
