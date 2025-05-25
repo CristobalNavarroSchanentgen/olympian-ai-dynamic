@@ -1,5 +1,5 @@
 """Enhanced Ollama Configuration API - Sacred Endpoint Management"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, field_validator
 from datetime import datetime
@@ -331,7 +331,7 @@ async def remove_ollama_endpoint(endpoint_url: str):
 
 
 @router.post("/endpoints/set-primary")
-async def set_primary_endpoint(endpoint_url: str):
+async def set_primary_endpoint(endpoint_url: str = Query(..., description="URL of the endpoint to set as primary")):
     """Set the primary Ollama endpoint"""
     # Verify endpoint exists and is enabled
     endpoints_response = await get_ollama_endpoints()
