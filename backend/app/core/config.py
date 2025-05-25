@@ -88,8 +88,27 @@ class Settings(BaseSettings):
     @classmethod    def parse_cors_origins(cls, v):
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+            # Try to parse as JSON first
+            import json
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except:
+                pass
+            
+            # If not JSON, treat as comma-separated string
+            if ',' in v:
+                return [origin.strip() for origin in v.split(",")]
+            
+            # Single origin
+            return [v.strip()] if v.strip() else ["http://localhost:3000", "http://localhost:5173"]
+        
+        if isinstance(v, list):
+            return v
+        
+        # Default fallback
+        return ["http://localhost:3000", "http://localhost:5173"]
     
     @validator("mcp_servers", pre=True)
     def load_mcp_servers(cls, v):
