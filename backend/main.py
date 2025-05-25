@@ -16,6 +16,7 @@ from app.api import (
     discovery,
     mcp,
     ollama,
+    ollama_config,  # New enhanced Ollama configuration router
     projects,
     system,
     webhooks
@@ -128,6 +129,7 @@ async def root():
             "api": {
                 "chat": "/api/chat",
                 "ollama": "/api/ollama",
+                "ollama_config": "/api/ollama/config",  # New sacred endpoint management
                 "projects": "/api/projects",
                 "config": "/api/config",
                 "system": "/api/system",
@@ -159,6 +161,7 @@ async def health_check():
 # Include API routers
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ollama.router, prefix="/api/ollama", tags=["ollama"])
+app.include_router(ollama_config.router, prefix="/api/ollama/config", tags=["ollama-config"])  # Sacred settings
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(system.router, prefix="/api/system", tags=["system"])
@@ -207,6 +210,7 @@ async def startup_message():
     logger.info(f"API URL: http://localhost:8000")
     logger.info(f"Docs URL: http://localhost:8000/docs")
     logger.info(f"WebSocket URL: ws://localhost:8000/ws/{{client_id}}")
+    logger.info("Sacred Ollama endpoint management available at: /api/ollama/config")
     logger.info("=" * 60)
 
 
