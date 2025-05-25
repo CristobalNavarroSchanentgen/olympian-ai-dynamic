@@ -1,10 +1,17 @@
 # Olympian AI - Divine AI Interface with Dynamic Service Discovery
 
-Welcome to Olympian AI, where divine aesthetics meet cutting-edge AI orchestration. This project features a Zeus-inspired interface with powerful backend capabilities and fully dynamic configuration management.
+Welcome to Olympian AI, where divine aesthetics meet cutting-edge AI orchestration. This project features a Zeus-inspired interface with powerful backend capabilities, dynamic configuration management, and production-ready Docker containerization with MongoDB persistence and Redis caching.
 
 ## 🏛️ Features
 
-### Sacred Ollama Endpoint Management ⚡
+### Sacred Infrastructure ⚡
+- **Production-Ready Dockerization** - Complete Docker setup with multi-stage builds
+- **MongoDB Persistence** - Divine data storage with automatic schema validation
+- **Redis Caching** - Lightning-fast caching for optimal performance
+- **Automated Backups** - Scheduled backups with configurable retention
+- **Monitoring Stack** - Prometheus, Grafana, and Loki for divine oversight
+
+### Sacred Ollama Endpoint Management
 - **Divine Oracle Registration** - Add and manage custom Ollama endpoints
 - **Real-time Connectivity Testing** - Test individual or all endpoints with divine precision
 - **Primary Oracle Selection** - Choose your primary endpoint with sacred golden styling
@@ -32,11 +39,36 @@ Welcome to Olympian AI, where divine aesthetics meet cutting-edge AI orchestrati
 - Automatic webhook generation
 - MCP client implementation
 - Ollama integration with model discovery
-- **Enhanced Ollama configuration API** with testing and validation
+- **MongoDB Integration** with Beanie ODM
+- **Redis Caching** for enhanced performance
 
 ## 🚀 Quick Start
 
-### Backend Setup
+### Docker Setup (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/CristobalNavarroSchanentgen/olympian-ai-dynamic.git
+cd olympian-ai-dynamic
+
+# Copy environment file
+cp .env.example .env
+
+# Start all services with Docker
+make docker-up
+
+# View logs
+make docker-logs
+
+# Access the application
+# Frontend: http://localhost
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### Development Setup
+
+#### Backend Setup
 
 ```bash
 # Install uv
@@ -48,14 +80,18 @@ cd backend
 # Create virtual environment
 uv venv
 
-# Install dependencies
+# Install dependencies (including MongoDB and Redis)
 uv pip install -r requirements.txt
+
+# Copy configuration files
+cp .env.example .env
+cp config.yaml.example config.yaml
 
 # Run with auto-discovery
 uvx --from uvicorn uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend Setup
+#### Frontend Setup
 
 ```bash
 # Navigate to frontend
@@ -64,31 +100,43 @@ cd frontend
 # Install dependencies
 npm install
 
+# Copy environment file
+cp .env.example .env
+
 # Start development server
 npm run dev
 ```
 
-## 🔥 Sacred Ollama Management
+## 🐳 Docker Commands
 
-Access the **Sacred Configuration** → **Sacred Ollama** tab for advanced endpoint management:
+```bash
+# Build images
+make docker-build
 
-### Adding Divine Oracles
-1. Click **"Add Oracle"** 
-2. Enter endpoint details:
-   - URL: `http://your-ollama:11434`
-   - Name: Custom display name
-   - Priority: 0-100 (higher = more divine)
-   - Timeout: Connection timeout seconds
-3. Click **"Register Oracle"**
+# Start services
+make docker-up
 
-### Testing Divine Connectivity
-- **Individual Test**: Click 🧪 next to any endpoint
-- **Bulk Test**: Click **"Test All"** for comprehensive validation
-- **Real-time Metrics**: View response times, model counts, versions
+# Stop services
+make docker-down
 
-### Primary Oracle Management
-- Click ⭐ next to any enabled endpoint to make it primary
-- Primary oracle gets divine golden styling and priority routing
+# View logs
+make docker-logs
+
+# Access MongoDB shell
+make mongodb-shell
+
+# Access Redis CLI
+make redis-cli
+
+# Backup MongoDB
+make mongodb-backup
+
+# Health check all services
+make health-check
+
+# Production deployment
+make docker-prod
+```
 
 ## 🏗️ Architecture
 
@@ -105,45 +153,63 @@ Access the **Sacred Configuration** → **Sacred Ollama** tab for advanced endpo
 │       Python Backend (FastAPI)           │
 │  - Enhanced Ollama Configuration API     │
 │  - Service Discovery Engine              │
-│  - Dynamic Configuration Management      │
+│  - MongoDB Integration (Beanie ODM)      │
+│  - Redis Caching Layer                   │
 │  - WebSocket Handler                     │
 │  - Auto-scaling Resources               │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────┴───────────────────────┐
-│         External Services                │
-│  - Multiple Ollama Instances (Custom)    │
+│         Infrastructure Services          │
+│  - MongoDB (Data Persistence)            │
+│  - Redis (Caching & Sessions)            │
+│  - Multiple Ollama Instances             │
 │  - MCP Servers                          │
-│  - Redis                                │
-│  - Webhooks                             │
+│  - Nginx (Reverse Proxy)                │
+│  - Monitoring Stack                      │
 └─────────────────────────────────────────┘
 ```
 
 ## 🔧 Configuration
 
-The system automatically discovers and configures services. Manual configuration is minimal:
+### Environment Variables
 
-```yaml
-# config.yaml - Most settings are auto-generated
-server:
-  host: "0.0.0.0"
-  port: 8000
-  discovery:
-    enabled: true
-    scan_interval: 30
+```bash
+# MongoDB Configuration
+MONGODB_URL=mongodb://mongodb:27017
+MONGODB_DATABASE=olympian_ai
+MONGODB_USERNAME=olympian_app
+MONGODB_PASSWORD=your-secure-password
 
-# User preferences persist across discoveries
-user_preferences:
-  preferred_models: []
-  disabled_services: []
-  custom_endpoints: []  # Sacred Ollama endpoints
-  manual_overrides:
-    ollama_endpoints:   # Advanced endpoint configs
-      "http://localhost:11434":
-        name: "Local Divine Oracle"
-        priority: 10
-        timeout: 30
+# Redis Configuration
+REDIS_URL=redis://redis:6379
+REDIS_PASSWORD=your-redis-password
+REDIS_TTL=3600
+
+# Security
+JWT_SECRET=your-secret-key-here
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+
+# Service Discovery
+DISCOVERY_ENABLED=true
+DISCOVERY_SCAN_INTERVAL=30
 ```
+
+### MongoDB Collections
+
+- **conversations** - Chat history with validation
+- **users** - User accounts and preferences
+- **services** - Discovered services and health status
+- **models** - Available AI models
+- **api_keys** - API key management
+
+### Redis Usage
+
+- **Session Management** - User sessions and auth tokens
+- **Cache Layer** - API responses and computed results
+- **Rate Limiting** - Request throttling
+- **Real-time Data** - WebSocket state management
 
 ## 📡 API Endpoints
 
@@ -165,45 +231,59 @@ user_preferences:
 - `GET /api/ollama/discover` - Discover Ollama instances
 - `GET /api/mcp/discover` - Discover MCP servers
 - `GET /api/system/resources` - Get system resources
+- `GET /api/health` - Health check endpoint
 
 ### Chat & Projects
 - `POST /api/chat/message` - Send chat message
 - `GET /api/projects` - List projects
 - `POST /api/projects` - Create project
 
-## ⚡ Sacred Features Highlights
+## ⚡ Production Features
 
-### User-Editable Endpoints
-Users can now easily manage Ollama endpoints through the divine interface:
-- Add custom endpoints beyond auto-discovery
-- Test connectivity with real-time feedback
-- Set priorities and configure timeouts
-- Enable/disable endpoints as needed
-- Designate primary oracles for optimal routing
+### High Availability
+- **Load Balancing** - Nginx reverse proxy with upstream configuration
+- **Health Checks** - Automatic container health monitoring
+- **Auto-restart** - Failed services automatically recover
+- **Resource Limits** - CPU and memory constraints for stability
 
-### Real-time Testing
-- Comprehensive connectivity validation
-- Performance metrics (response time, model count)
-- Error reporting with detailed messages
-- Bulk testing for efficiency
+### Security
+- **Non-root Containers** - Enhanced security posture
+- **Network Isolation** - Custom bridge network
+- **Secret Management** - Environment-based configuration
+- **CORS Protection** - Configurable origin restrictions
 
-### Divine UX Design
-- Olympus gold and Zeus blue theming
-- Animated interactions and status updates
-- Responsive design for all devices
-- Intuitive controls with sacred iconography
+### Monitoring & Logging
+- **Prometheus** - Metrics collection
+- **Grafana** - Visual dashboards
+- **Loki** - Log aggregation
+- **Promtail** - Log shipping
+
+### Backup & Recovery
+- **Automated Backups** - Scheduled MongoDB dumps
+- **Point-in-time Recovery** - Redis persistence
+- **Configuration Backups** - Version-controlled configs
 
 ## 📚 Documentation
 
 - [Sacred Ollama Endpoint Management Guide](docs/sacred-ollama-endpoints.md)
+- [Docker Deployment Guide](docs/docker-deployment.md)
 - [API Documentation](http://localhost:8000/docs) (when running)
 - [Architecture Overview](ARCHITECTURE.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+
+## 🛡️ Security Considerations
+
+- Always change default passwords in production
+- Use SSL/TLS for external access
+- Configure firewall rules appropriately
+- Regularly update Docker images
+- Monitor logs for suspicious activity
 
 ## 🌟 The Divine Experience
 
-Olympian AI transforms AI interaction into a divine experience. The system automatically adapts to your environment, discovering and configuring services without manual intervention. The new Sacred Ollama Endpoint Management elevates this experience, giving users divine control over their AI oracles while maintaining the elegant, mythology-inspired interface.
+Olympian AI transforms AI interaction into a divine experience. With production-ready Docker containerization, MongoDB persistence, and Redis caching, the system provides enterprise-grade reliability while maintaining the elegant, mythology-inspired interface.
 
-Like Zeus commanding from Mount Olympus, you control powerful AI capabilities through an interface worthy of the gods themselves.
+Like Zeus commanding from Mount Olympus, you control powerful AI capabilities through an interface worthy of the gods themselves, now with the stability and performance of modern cloud infrastructure.
 
 ## 📜 License
 
