@@ -8,8 +8,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from .config import settings
-from ..services.ollama_service import OllamaService
-from ..services.mcp_service import MCPService
 
 
 def safe_model_dump(obj):
@@ -30,8 +28,23 @@ class WebSocketManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_metadata: Dict[str, Dict[str, Any]] = {}
-        self.ollama_service = OllamaService()
-        self.mcp_service = MCPService()
+        
+        # Initialize services safely - don't fail if they're not available
+        self.ollama_service = None
+        self.mcp_service = None
+        
+        try:
+            from ..services.ollama_service import OllamaService
+            self.ollama_service = OllamaService()
+        except Exception as e:
+            logger.warning(f"Could not initialize Ollama service: {e}")
+        
+        try:
+            from ..services.mcp_service import MCPService
+            self.mcp_service = MCPService()
+        except Exception as e:
+            logger.warning(f"Could not initialize MCP service: {e}")
+        
         self._message_handlers = {
             "chat": self._handle_chat_message,
             "config_update": self._handle_config_update,
@@ -115,6 +128,10 @@ class WebSocketManager:
         
         if not model:
             await self.send_error(client_id, "No model selected")
+            return
+        
+        if not self.ollama_service:
+            await self.send_error(client_id, "Ollama service not available")
             return
         
         # Send typing indicator
@@ -260,7 +277,7 @@ class WebSocketManager:
             pass
         elif generation_type == "code":
             # Code generation with MCP tools
-            if self.mcp_service.is_connected():
+            if self.mcp_service and self.mcp_service.is_connected():
                 # Use MCP for code generation
                 pass
         elif generation_type == "audio":
@@ -313,7 +330,10 @@ class WebSocketManager:
             "timestamp": datetime.now().isoformat()
         }
         
-        await websocket.send_json(welcome_data)
+        try:
+            await websocket.send_json(welcome_data)
+        except Exception as e:
+            logger.error(f"Error sending welcome message: {e}")
     
     async def send_message(self, client_id: str, message: Dict[str, Any]):
         """Send message to specific client"""
@@ -399,10 +419,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
                 break
             except json.JSONDecodeError:
                 logger.error(f"Invalid JSON received from client {actual_client_id}")
-                await ws_manager.send_error(actual_client_id, "Invalid JSON format")
+                if actual_client_id:
+                    await ws_manager.send_error(actual_client_id, "Invalid JSON format")
             except Exception as e:
                 logger.error(f"Error handling message from {actual_client_id}: {e}")
-                await ws_manager.send_error(actual_client_id, f"Message handling error: {str(e)}")
+                if actual_client_id:
+                    await ws_manager.send_error(actual_client_id, f"Message handling error: {str(e)}")
     
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
@@ -417,3 +439,9 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
         # Disconnect the client
         if actual_client_id:
             ws_manager.disconnect(websocket)
+        else:
+            # If we never got a client ID, just close the connection
+            try:
+                await websocket.close()
+            except:
+                pass
