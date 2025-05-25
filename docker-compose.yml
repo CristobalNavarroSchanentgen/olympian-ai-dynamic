@@ -94,11 +94,13 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+      # Create redis.conf if it doesn't exist
       - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
     networks:
       - olympian-network
     restart: unless-stopped
-    command: redis-server /usr/local/etc/redis/redis.conf
+    # Run without config file if it doesn't exist
+    command: sh -c 'if [ -f /usr/local/etc/redis/redis.conf ]; then redis-server /usr/local/etc/redis/redis.conf; else redis-server; fi'
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -119,64 +121,19 @@ services:
     networks:
       - olympian-network
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # Note: GPU support requires nvidia-docker
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # MCP Filesystem Server
-  mcp-filesystem:
-    image: modelcontextprotocol/server-filesystem:latest
-    container_name: olympian-mcp-filesystem
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./data/mcp:/workspace
-    environment:
-      - MCP_WORKSPACE=/workspace
-    networks:
-      - olympian-network
-    restart: unless-stopped
-
-  # MCP Git Server
-  mcp-git:
-    image: modelcontextprotocol/server-git:latest
-    container_name: olympian-mcp-git
-    ports:
-      - "3001:3000"
-    environment:
-      - MCP_GIT_REPOS=/repos
-    volumes:
-      - ./data/git:/repos
-    networks:
-      - olympian-network
-    restart: unless-stopped
-
-  # Backup Service
-  backup:
-    image: blacklabelops/volumerize:latest
-    container_name: olympian-backup
-    environment:
-      - VOLUMERIZE_SOURCE=/source
-      - VOLUMERIZE_TARGET=file:///backup
-      - VOLUMERIZE_DUPLICITY_OPTIONS=--no-encryption
-      - VOLUMERIZE_JOBBER_TIME=0 0 3 * * *
-    volumes:
-      - mongodb-data:/source/mongodb:ro
-      - redis-data:/source/redis:ro
-      - ./data:/source/data:ro
-      - ./backups:/backup
-    networks:
-      - olympian-network
-    restart: unless-stopped
 
 volumes:
   mongodb-data:
