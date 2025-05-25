@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { projectAPI } from '@/lib/api'
 import { useConfig } from '@/contexts/ConfigContext'
-import { formatBytes, formatRelativeTime } from '@/lib/utils'
+import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -564,7 +564,7 @@ export default function ProjectWorkspace() {
                         <div key={server.id} className="space-y-2">
                           <h4 className="text-sm font-medium">{server.type} Server</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {server.tools?.map((tool) => (
+                            {server.tools?.map((tool: any) => (
                               <div key={tool} className="flex items-center gap-2">
                                 <Switch
                                   checked={formData.tools.includes(tool)}
