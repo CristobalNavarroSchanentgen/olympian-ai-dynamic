@@ -1,7 +1,7 @@
 """Enhanced Ollama Configuration API - Sacred Endpoint Management"""
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, HttpUrl, validator
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 from loguru import logger
 import asyncio
@@ -23,8 +23,9 @@ class OllamaEndpoint(BaseModel):
     timeout: int = 30
     priority: int = 0  # Higher priority = preferred endpoint
     
-    @validator('url')
-    def validate_url(cls, v):
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v: str) -> str:
         """Validate URL format"""
         if not v.startswith(('http://', 'https://')):
             v = f'http://{v}'
@@ -187,7 +188,7 @@ async def test_all_endpoints(background_tasks: BackgroundTasks):
     background_tasks.add_task(
         ws_manager.notify_config_change,
         "ollama_endpoints_tested",
-        {"results": [r.dict() for r in test_results]}
+        {"results": [r.model_dump() for r in test_results]}  # Use model_dump() for Pydantic v2
     )
     
     return {
@@ -229,15 +230,15 @@ async def add_ollama_endpoint(endpoint: OllamaEndpoint):
     await ws_manager.notify_config_change(
         "ollama_endpoint_added",
         {
-            "endpoint": endpoint.dict(),
-            "test_result": test_result.dict()
+            "endpoint": endpoint.model_dump(),  # Use model_dump() for Pydantic v2
+            "test_result": test_result.model_dump()
         }
     )
     
     return {
         "status": "added",
-        "endpoint": endpoint.dict(),
-        "test_result": test_result.dict(),
+        "endpoint": endpoint.model_dump(),
+        "test_result": test_result.model_dump(),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -279,13 +280,13 @@ async def update_ollama_endpoint(endpoint_url: str, endpoint: OllamaEndpoint):
         "ollama_endpoint_updated",
         {
             "old_url": endpoint_url,
-            "endpoint": endpoint.dict()
+            "endpoint": endpoint.model_dump()
         }
     )
     
     return {
         "status": "updated",
-        "endpoint": endpoint.dict(),
+        "endpoint": endpoint.model_dump(),
         "timestamp": datetime.now().isoformat()
     }
 
