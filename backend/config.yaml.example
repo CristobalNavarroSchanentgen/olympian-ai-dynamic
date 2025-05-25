@@ -1,0 +1,60 @@
+# Olympian AI Configuration
+# This file is auto-generated and updated by service discovery
+# Manual overrides can be added in the user_preferences section
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  discovery:
+    enabled: true
+    scan_interval: 30  # seconds
+    network_ranges:
+      - "127.0.0.1"
+      - "localhost"
+      - "0.0.0.0"
+    ports:
+      ollama:
+        - 11434
+        - 8080
+      redis:
+        - 6379
+      mcp:
+        - 3000
+        - 3001
+        - 3002
+        - 3003
+        - 3004
+        - 3005
+        - 3006
+        - 3007
+        - 3008
+        - 3009
+        - 3010
+
+# Auto-discovered services (updated by discovery engine)
+discovered_services:
+  ollama:
+    endpoints: []  # Auto-populated
+    models: []     # Auto-populated from /api/tags
+    capabilities: {} # Auto-introspected
+  
+  mcp_servers:
+    available: []  # Auto-discovered
+    configured: [] # Auto-configured
+  
+  webhooks:
+    available_types: []  # Auto-detected integrations
+    endpoints: []        # Auto-generated
+
+# User preferences (persisted across discoveries)
+user_preferences:
+  preferred_models: []
+  custom_endpoints: []
+  manual_overrides: {}
+  disabled_services: []
+
+# Security settings
+security:
+  api_keys: []
+  rate_limit:
+    auto_adjust: true  # Based on system capacity

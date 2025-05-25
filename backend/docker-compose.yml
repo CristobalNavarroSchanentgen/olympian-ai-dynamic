@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Olympian AI Backend
+  backend:
+    build: .
+    container_name: olympian-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - REDIS_URL=redis://redis:6379
+      - DISCOVERY_ENABLED=true
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - redis
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: olympian-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+  # Ollama (optional - can use external instance)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: olympian-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # MCP Filesystem Server (optional)
+  mcp-filesystem:
+    image: modelcontextprotocol/server-filesystem:latest
+    container_name: olympian-mcp-filesystem
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/mcp:/workspace
+    environment:
+      - MCP_WORKSPACE=/workspace
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+  # MCP Git Server (optional)
+  mcp-git:
+    image: modelcontextprotocol/server-git:latest
+    container_name: olympian-mcp-git
+    ports:
+      - "3001:3000"
+    environment:
+      - MCP_GIT_REPOS=/repos
+    volumes:
+      - ./data/git:/repos
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  ollama-data:
+
+networks:
+  olympian-network:
+    driver: bridge
