@@ -1,0 +1,46 @@
+# Docker Compose Override Example
+# Copy this to docker-compose.override.yml and customize
+
+version: '3.8'
+
+services:
+  backend:
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    command: npm run dev
+
+  # Add Supabase for local development
+  supabase-db:
+    image: supabase/postgres:latest
+    environment:
+      POSTGRES_PASSWORD: your-super-secret-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+
+  # Add Mattermost for webhook testing
+  mattermost:
+    image: mattermost/mattermost-preview:latest
+    ports:
+      - "8065:8065"
+    environment:
+      - MM_SERVICESETTINGS_SITEURL=http://localhost:8065
+      - MM_SERVICESETTINGS_ENABLELOCALMODE=true
+
+volumes:
+  supabase-db-data:
