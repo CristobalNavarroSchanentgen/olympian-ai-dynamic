@@ -1,0 +1,198 @@
+version: '3.8'
+
+services:
+  # Frontend Service
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: olympian-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_URL=http://backend:8000
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API Service
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: olympian-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DATABASE=olympian_ai
+      - DISCOVERY_ENABLED=true
+      - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:443
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./backend/config.yaml:/app/config.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MongoDB for persistence
+  mongodb:
+    image: mongo:7.0
+    container_name: olympian-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=olympian_ai
+      # Uncomment for production with authentication
+      # - MONGO_INITDB_ROOT_USERNAME=admin
+      # - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD}
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: mongod --wiredTigerCacheSizeGB 2
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: olympian-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: olympian-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+    networks:
+      - olympian-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Filesystem Server
+  mcp-filesystem:
+    image: modelcontextprotocol/server-filesystem:latest
+    container_name: olympian-mcp-filesystem
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/mcp:/workspace
+    environment:
+      - MCP_WORKSPACE=/workspace
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+  # MCP Git Server
+  mcp-git:
+    image: modelcontextprotocol/server-git:latest
+    container_name: olympian-mcp-git
+    ports:
+      - "3001:3000"
+    environment:
+      - MCP_GIT_REPOS=/repos
+    volumes:
+      - ./data/git:/repos
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+  # Backup Service
+  backup:
+    image: blacklabelops/volumerize:latest
+    container_name: olympian-backup
+    environment:
+      - VOLUMERIZE_SOURCE=/source
+      - VOLUMERIZE_TARGET=file:///backup
+      - VOLUMERIZE_DUPLICITY_OPTIONS=--no-encryption
+      - VOLUMERIZE_JOBBER_TIME=0 0 3 * * *
+    volumes:
+      - mongodb-data:/source/mongodb:ro
+      - redis-data:/source/redis:ro
+      - ./data:/source/data:ro
+      - ./backups:/backup
+    networks:
+      - olympian-network
+    restart: unless-stopped
+
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+  redis-data:
+    driver: local
+  ollama-data:
+    driver: local
+  nginx-cache:
+    driver: local
+
+networks:
+  olympian-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
