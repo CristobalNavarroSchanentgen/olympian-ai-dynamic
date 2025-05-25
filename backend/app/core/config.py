@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", env="ENVIRONMENT")
     debug: bool = Field(default=True, env="DEBUG")
     
+    # Server settings
+    server_host: str = Field(default="127.0.0.1", env="SERVER_HOST")
+    server_port: int = Field(default=8000, env="SERVER_PORT")
+    
     # API settings
     api_prefix: str = "/api"
     cors_origins: Union[str, List[str]] = Field(
@@ -29,6 +33,10 @@ class Settings(BaseSettings):
         env="OLLAMA_BASE_URL"
     )
     ollama_timeout: int = Field(default=120, env="OLLAMA_TIMEOUT")
+    ollama_endpoints: Union[str, List[str]] = Field(
+        default="http://localhost:11434",
+        env="OLLAMA_ENDPOINTS"
+    )
     
     # Redis settings
     redis_url: str = Field(
@@ -45,6 +53,10 @@ class Settings(BaseSettings):
         default="your-secret-key-here-change-in-production",
         env="JWT_SECRET_KEY"
     )
+    jwt_secret: str = Field(
+        default="your-secret-key-here-change-in-production",
+        env="JWT_SECRET"
+    )
     jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
     jwt_expiration_minutes: int = Field(default=1440, env="JWT_EXPIRATION_MINUTES")
     
@@ -53,9 +65,17 @@ class Settings(BaseSettings):
         default=True,
         env="SERVICE_DISCOVERY_ENABLED"
     )
+    discovery_enabled: bool = Field(
+        default=True,
+        env="DISCOVERY_ENABLED"
+    )
     service_scan_interval: int = Field(
         default=300,  # 5 minutes
         env="SERVICE_SCAN_INTERVAL"
+    )
+    discovery_scan_interval: int = Field(
+        default=30,
+        env="DISCOVERY_SCAN_INTERVAL"
     )
     
     # MCP settings
@@ -70,6 +90,11 @@ class Settings(BaseSettings):
     webhook_timeout: int = Field(default=30, env="WEBHOOK_TIMEOUT")
     webhook_max_retries: int = Field(default=3, env="WEBHOOK_MAX_RETRIES")
     
+    # External service integrations
+    mattermost_url: Optional[str] = Field(default=None, env="MATTERMOST_URL")
+    mattermost_token: Optional[str] = Field(default=None, env="MATTERMOST_TOKEN")
+    discord_webhook_url: Optional[str] = Field(default=None, env="DISCORD_WEBHOOK_URL")
+    
     # System settings
     max_upload_size: int = Field(
         default=100 * 1024 * 1024,  # 100MB
@@ -83,6 +108,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # Allow extra fields without validation errors
     
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -90,6 +116,14 @@ class Settings(BaseSettings):
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
+        return v
+    
+    @field_validator("ollama_endpoints", mode="before")
+    @classmethod
+    def parse_ollama_endpoints(cls, v):
+        """Parse Ollama endpoints from string or list"""
+        if isinstance(v, str):
+            return [endpoint.strip() for endpoint in v.split(",")]
         return v
     
     @field_validator("mcp_servers", mode="before")
@@ -126,6 +160,12 @@ class Settings(BaseSettings):
         """Get list of preferred Ollama models"""
         return self.discovered_services.get("ollama", {}).get("models", [])
     
+    def get_ollama_endpoints(self) -> List[str]:
+        """Get list of Ollama endpoints"""
+        if isinstance(self.ollama_endpoints, list):
+            return self.ollama_endpoints
+        return [self.ollama_base_url]
+    
     def is_production(self) -> bool:
         """Check if running in production"""
         return self.environment.lower() == "production"
@@ -137,6 +177,20 @@ class Settings(BaseSettings):
             "encoding": "utf-8",
             "decode_responses": True
         }
+    
+    def get_effective_jwt_secret(self) -> str:
+        """Get the JWT secret, preferring jwt_secret over jwt_secret_key"""
+        return self.jwt_secret or self.jwt_secret_key
+    
+    def is_service_discovery_enabled(self) -> bool:
+        """Check if service discovery is enabled (supports both field names)"""
+        return self.service_discovery_enabled or self.discovery_enabled
+    
+    def get_effective_scan_interval(self) -> int:
+        """Get the scan interval, preferring discovery_scan_interval if set"""
+        if self.discovery_scan_interval != 30:  # If it's not the default
+            return self.discovery_scan_interval
+        return self.service_scan_interval
 
 
 # Create global settings instance
