@@ -354,3 +354,41 @@ class WebSocketManager:
             "data": config_data,
             "timestamp": datetime.now().isoformat()
         })
+
+
+# Global WebSocket manager instance
+ws_manager = WebSocketManager()
+
+
+async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
+    """WebSocket endpoint for real-time communication"""
+    try:
+        # Connect the client
+        actual_client_id = await ws_manager.connect(websocket, client_id)
+        
+        # Handle messages
+        while True:
+            try:
+                # Receive message
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                
+                # Handle the message
+                await ws_manager.handle_message(websocket, message)
+                
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket client {actual_client_id} disconnected normally")
+                break
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON received from client {actual_client_id}")
+                await ws_manager.send_error(actual_client_id, "Invalid JSON format")
+            except Exception as e:
+                logger.error(f"Error handling message from {actual_client_id}: {e}")
+                await ws_manager.send_error(actual_client_id, f"Message handling error: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"WebSocket connection error: {e}")
+    
+    finally:
+        # Disconnect the client
+        ws_manager.disconnect(websocket)
