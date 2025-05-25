@@ -18,11 +18,21 @@ class MCPService:
     
     async def initialize(self):
         """Initialize MCP service with discovered servers"""
-        servers = settings.discovered_services.mcp_servers.get("available", [])
+        # Fix: access discovered_services as a dictionary
+        mcp_config = settings.discovered_services.get("mcp_servers", {})
+        servers = mcp_config.get("available", [])
+        
+        # If no discovered servers, use configured MCP servers
+        if not servers and settings.mcp_servers:
+            servers = settings.mcp_servers
         
         for server in servers:
-            endpoint = server["endpoint"]
-            server_id = server["id"]
+            endpoint = server.get("endpoint")
+            server_id = server.get("id")
+            
+            if not endpoint or not server_id:
+                logger.warning(f"Skipping invalid MCP server config: {server}")
+                continue
             
             self._servers[server_id] = server
             self._clients[server_id] = httpx.AsyncClient(
@@ -123,7 +133,7 @@ class MCPService:
         # Find filesystem server
         if not server_id:
             for sid, server in self._servers.items():
-                if server["type"] == "filesystem":
+                if server.get("type") == "filesystem":
                     server_id = sid
                     break
         
@@ -149,7 +159,7 @@ class MCPService:
         # Find filesystem server
         if not server_id:
             for sid, server in self._servers.items():
-                if server["type"] == "filesystem":
+                if server.get("type") == "filesystem":
                     server_id = sid
                     break
         
@@ -175,7 +185,7 @@ class MCPService:
         # Find git server
         if not server_id:
             for sid, server in self._servers.items():
-                if server["type"] == "git":
+                if server.get("type") == "git":
                     server_id = sid
                     break
         
@@ -197,7 +207,7 @@ class MCPService:
         # Find GitHub server
         if not server_id:
             for sid, server in self._servers.items():
-                if server["type"] == "github":
+                if server.get("type") == "github":
                     server_id = sid
                     break
         
