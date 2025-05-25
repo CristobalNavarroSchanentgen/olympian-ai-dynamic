@@ -1,46 +1,73 @@
-# Docker Compose Override Example
-# Copy this to docker-compose.override.yml and customize
+# Optional Services Override File
+# Copy this to docker-compose.override.yml to add optional services
+# docker-compose automatically merges this with docker-compose.yml
 
 version: '3.8'
 
 services:
-  backend:
-    environment:
-      - DEBUG=true
-      - LOG_LEVEL=DEBUG
-    volumes:
-      - ./backend:/app
-    command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+  # Example: Add GPU support to Ollama (requires nvidia-docker)
+  # ollama:
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - VITE_API_URL=http://localhost:8000
-    command: npm run dev
+  # Example: Add authentication to MongoDB
+  # mongodb:
+  #   environment:
+  #     - MONGO_INITDB_ROOT_USERNAME=admin
+  #     - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD}
+  #   command: mongod --auth --wiredTigerCacheSizeGB 2
 
-  # Add Supabase for local development
-  supabase-db:
-    image: supabase/postgres:latest
-    environment:
-      POSTGRES_PASSWORD: your-super-secret-password
-    ports:
-      - "5432:5432"
-    volumes:
-      - supabase-db-data:/var/lib/postgresql/data
+  # Example: Add password to Redis
+  # redis:
+  #   command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
 
-  # Add Mattermost for webhook testing
-  mattermost:
-    image: mattermost/mattermost-preview:latest
-    ports:
-      - "8065:8065"
-    environment:
-      - MM_SERVICESETTINGS_SITEURL=http://localhost:8065
-      - MM_SERVICESETTINGS_ENABLELOCALMODE=true
+  # Example: Backup Service (when image becomes available)
+  # backup:
+  #   image: blacklabelops/volumerize:latest
+  #   container_name: olympian-backup
+  #   environment:
+  #     - VOLUMERIZE_SOURCE=/source
+  #     - VOLUMERIZE_TARGET=file:///backup
+  #     - VOLUMERIZE_DUPLICITY_OPTIONS=--no-encryption
+  #     - VOLUMERIZE_JOBBER_TIME=0 0 3 * * *
+  #   volumes:
+  #     - mongodb-data:/source/mongodb:ro
+  #     - redis-data:/source/redis:ro
+  #     - ./data:/source/data:ro
+  #     - ./backups:/backup
+  #   networks:
+  #     - olympian-network
+  #   restart: unless-stopped
 
-volumes:
-  supabase-db-data:
+  # Example: MCP Servers (when images become available)
+  # Note: These are hypothetical services - replace with actual MCP implementations
+  # mcp-filesystem:
+  #   image: your-mcp-filesystem-image:latest
+  #   container_name: olympian-mcp-filesystem
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./data/mcp:/workspace
+  #   environment:
+  #     - MCP_WORKSPACE=/workspace
+  #   networks:
+  #     - olympian-network
+  #   restart: unless-stopped
+
+  # mcp-git:
+  #   image: your-mcp-git-image:latest
+  #   container_name: olympian-mcp-git
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     - MCP_GIT_REPOS=/repos
+  #   volumes:
+  #     - ./data/git:/repos
+  #   networks:
+  #     - olympian-network
+  #   restart: unless-stopped
