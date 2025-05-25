@@ -41,10 +41,14 @@ class ServiceDiscoveryEngine:
         self._running = False
         if self._scan_task:
             self._scan_task.cancel()
+        if self._http_client:
+            asyncio.create_task(self._http_client.aclose())
         logger.info("Service Discovery Engine stopped")
     
     async def discover_ollama_instances(self) -> Dict[str, Any]:
         """Discover Ollama instances on the network"""
+        logger.info("🔍 Scanning for Ollama instances...")
+        
         ollama_services = {
             "endpoints": [],
             "models": [],
@@ -61,19 +65,27 @@ class ServiceDiscoveryEngine:
         
         ports_to_check = [11434, 11435, 11436]  # Default and alternative ports
         
+        if not self._http_client:
+            logger.error("HTTP client not initialized. Call start() first.")
+            return ollama_services
+        
         for host in hosts_to_check:
             for port in ports_to_check:
                 url = f"http://{host}:{port}"
                 try:
+                    logger.debug(f"Checking Ollama at {url}")
+                    
                     # Check if Ollama is running
-                    response = await self._http_client.get(f"{url}/api/tags")
+                    response = await self._http_client.get(f"{url}/api/tags", timeout=5.0)
                     if response.status_code == 200:
                         ollama_services["endpoints"].append(url)
                         
                         # Get available models
                         data = response.json()
                         if "models" in data:
-                            ollama_services["models"].extend(data["models"])
+                            for model in data["models"]:
+                                if model not in ollama_services["models"]:
+                                    ollama_services["models"].append(model)
                         
                         # Check capabilities
                         ollama_services["capabilities"] = {
@@ -82,23 +94,28 @@ class ServiceDiscoveryEngine:
                             "completion": True
                         }
                         
-                        logger.info(f"✅ Found Ollama instance at {url}")
-                except Exception:
+                        logger.info(f"✅ Found Ollama instance at {url} with {len(data.get('models', []))} models")
+                        
+                        # Only check first working port per host to avoid duplicates
+                        break
+                        
+                except httpx.ConnectError:
+                    logger.debug(f"❌ Connection refused at {url}")
+                    continue
+                except httpx.TimeoutException:
+                    logger.debug(f"⏰ Timeout connecting to {url}")
+                    continue
+                except Exception as e:
+                    logger.debug(f"❌ Error connecting to {url}: {e}")
                     continue
         
-        # Remove duplicate models
-        seen = set()
-        unique_models = []
-        for model in ollama_services["models"]:
-            if model["name"] not in seen:
-                seen.add(model["name"])
-                unique_models.append(model)
-        
-        ollama_services["models"] = unique_models
+        logger.info(f"🎯 Ollama discovery complete - found {len(ollama_services['endpoints'])} instances")
         return ollama_services
     
     async def scan_system_resources(self) -> Dict[str, Any]:
         """Scan system resources and capabilities"""
+        logger.debug("📊 Scanning system resources...")
+        
         resources = {
             "cpu": {
                 "count": psutil.cpu_count(),
@@ -155,6 +172,7 @@ class ServiceDiscoveryEngine:
                     }
                     for gpu in gpus
                 ]
+                logger.info(f"🎮 Found {len(gpus)} GPU(s)")
             except:
                 pass
         
@@ -162,6 +180,7 @@ class ServiceDiscoveryEngine:
     
     async def discover_mcp_servers(self) -> List[Dict[str, Any]]:
         """Discover Model Context Protocol servers"""
+        logger.debug("🔌 Scanning for MCP servers...")
         mcp_servers = []
         
         # Check for known MCP server patterns
@@ -171,6 +190,7 @@ class ServiceDiscoveryEngine:
     
     async def discover_docker_services(self) -> Dict[str, Any]:
         """Discover services running in Docker containers"""
+        logger.debug("🐳 Scanning Docker services...")
         docker_services = {
             "containers": [],
             "images": []
@@ -198,6 +218,8 @@ class ServiceDiscoveryEngine:
                         "tags": image.tags,
                         "size": image.attrs.get("Size", 0)
                     })
+                    
+            logger.info(f"🐳 Found {len(docker_services['containers'])} containers, {len(docker_services['images'])} images")
         except Exception as e:
             logger.warning(f"Could not connect to Docker: {e}")
         
@@ -207,25 +229,47 @@ class ServiceDiscoveryEngine:
         """Perform a full service discovery scan"""
         logger.info("🔍 Starting full service discovery scan...")
         
-        results = {
-            "timestamp": datetime.now().isoformat(),
-            "system": await self.scan_system_resources(),
-            "services": {
-                "ollama": await self.discover_ollama_instances(),
-                "mcp": await self.discover_mcp_servers(),
-                "docker": await self.discover_docker_services()
+        try:
+            results = {
+                "timestamp": datetime.now().isoformat(),
+                "system": await self.scan_system_resources(),
+                "services": {
+                    "ollama": await self.discover_ollama_instances(),
+                    "mcp": await self.discover_mcp_servers(),
+                    "docker": await self.discover_docker_services()
+                }
             }
-        }
-        
-        self._discovered_services = results
-        self._last_scan = datetime.now()
-        
-        logger.info("✅ Service discovery scan complete")
-        return results
+            
+            self._discovered_services = results
+            self._last_scan = datetime.now()
+            
+            # Log summary
+            ollama_count = len(results["services"]["ollama"]["endpoints"])
+            mcp_count = len(results["services"]["mcp"])
+            docker_count = len(results["services"]["docker"]["containers"])
+            
+            logger.info(f"✅ Service discovery scan complete:")
+            logger.info(f"   📡 Ollama instances: {ollama_count}")
+            logger.info(f"   🔌 MCP servers: {mcp_count}")
+            logger.info(f"   🐳 Docker containers: {docker_count}")
+            
+            return results
+        except Exception as e:
+            logger.error(f"❌ Error during full scan: {e}")
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e),
+                "system": {},
+                "services": {"ollama": {"endpoints": [], "models": []}, "mcp": [], "docker": {"containers": []}}
+            }
     
     async def get_service_health(self) -> Dict[str, Any]:
         """Check health status of discovered services"""
         health_status = {}
+        
+        if not self._http_client:
+            logger.warning("HTTP client not available for health checks")
+            return health_status
         
         # Check Ollama instances
         ollama_endpoints = self._discovered_services.get("services", {}).get("ollama", {}).get("endpoints", [])
@@ -237,11 +281,15 @@ class ServiceDiscoveryEngine:
                 health_status[f"ollama_{endpoint}"] = False
         
         # System health
-        health_status["system"] = {
-            "cpu_ok": psutil.cpu_percent() < 90,
-            "memory_ok": psutil.virtual_memory().percent < 90,
-            "disk_ok": all(usage.percent < 90 for usage in [psutil.disk_usage(p.mountpoint) for p in psutil.disk_partitions()])
-        }
+        try:
+            health_status["system"] = {
+                "cpu_ok": psutil.cpu_percent() < 90,
+                "memory_ok": psutil.virtual_memory().percent < 90,
+                "disk_ok": all(usage.percent < 90 for usage in [psutil.disk_usage(p.mountpoint) for p in psutil.disk_partitions() if p.mountpoint])
+            }
+        except Exception as e:
+            logger.error(f"Error checking system health: {e}")
+            health_status["system"] = {"error": str(e)}
         
         return health_status
     
@@ -251,6 +299,9 @@ class ServiceDiscoveryEngine:
     
     async def _check_ollama_endpoint(self, url: str) -> bool:
         """Check if an Ollama endpoint is accessible"""
+        if not self._http_client:
+            return False
+            
         try:
             response = await self._http_client.get(f"{url}/api/tags", timeout=5.0)
             return response.status_code == 200
