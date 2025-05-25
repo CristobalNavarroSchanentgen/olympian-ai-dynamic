@@ -12,7 +12,8 @@ import {
   Plus,
   Zap,
   Bot,
-  User
+  User,
+  Square
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -98,11 +99,34 @@ export default function DivineChatInterface() {
           setStreamingContent('')
           setIsStreaming(false)
         }
+      } else if (msg.cancelled) {
+        // Handle cancelled generation
+        setIsStreaming(false)
+        setStreamingContent('')
+        toast({
+          title: "Generation Stopped",
+          description: "Divine wisdom flow has been halted by your command",
+          variant: "default"
+        })
       }
     })
 
     return () => unsubscribe()
-  }, [subscribe, currentConversation, streamingContent])
+  }, [subscribe, currentConversation, streamingContent, toast])
+
+  useEffect(() => {
+    // Subscribe to generation stopped messages
+    const unsubscribe = subscribe('generation_stopped', (msg) => {
+      setIsStreaming(false)
+      toast({
+        title: "Oracle Silenced",
+        description: msg.message || "The divine voice has been stilled",
+        variant: "default"
+      })
+    })
+
+    return () => unsubscribe()
+  }, [subscribe, toast])
 
   useEffect(() => {
     scrollToBottom()
@@ -194,6 +218,29 @@ export default function DivineChatInterface() {
       model: selectedModel,
       conversation_id: currentConversation.id
     })
+  }
+
+  const stopGeneration = () => {
+    if (!isStreaming) return
+    
+    // Send stop message via WebSocket
+    sendMessage({
+      type: 'stop_generation'
+    })
+    
+    toast({
+      title: "Stopping Generation",
+      description: "Commanding the Oracle to cease its divine utterance...",
+      variant: "default"
+    })
+  }
+
+  const handleSendStopButton = () => {
+    if (isStreaming) {
+      stopGeneration()
+    } else {
+      sendChatMessage()
+    }
   }
 
   const clearConversation = async () => {
@@ -470,22 +517,34 @@ export default function DivineChatInterface() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      sendChatMessage()
+                      if (!isStreaming) {
+                        sendChatMessage()
+                      }
                     }
                   }}
-                  placeholder="Speak to the Oracle..."
+                  placeholder={isStreaming ? "Oracle is speaking... Press stop to halt divine wisdom" : "Speak to the Oracle..."}
                   className="flex-1 min-h-[60px] max-h-[200px] resize-none border-olympus-gold/20 bg-zeus-dark/30"
                   disabled={isStreaming}
                 />
                 <Button
-                  variant="divine"
+                  variant={isStreaming ? "destructive" : "divine"}
                   size="lg"
-                  onClick={sendChatMessage}
-                  disabled={!message.trim() || isStreaming || !selectedModel}
-                  className="px-8"
+                  onClick={handleSendStopButton}
+                  disabled={(!message.trim() && !isStreaming) || !selectedModel}
+                  className={cn(
+                    "px-8 transition-all duration-200",
+                    isStreaming && "hover:bg-red-600/90 border-red-500/50"
+                  )}
+                  title={isStreaming ? "Stop generation" : "Send message"}
                 >
                   {isStreaming ? (
-                    <Sparkles className="h-5 w-5 animate-spin" />
+                    <motion.div
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <Square className="h-5 w-5" />
+                    </motion.div>
                   ) : (
                     <Send className="h-5 w-5" />
                   )}
