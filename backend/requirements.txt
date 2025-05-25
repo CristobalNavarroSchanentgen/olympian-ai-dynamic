@@ -7,6 +7,10 @@ redis>=5.0.3
 pydantic>=2.6.4
 pydantic-settings>=2.2.1
 
+# Database
+motor>=3.3.2  # MongoDB async driver
+beanie>=1.23.6  # MongoDB ODM for async operations
+
 # Async and networking
 aiofiles>=23.2.1
 aiohttp>=3.9.3
