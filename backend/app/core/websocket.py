@@ -167,7 +167,7 @@ class WebSocketManager:
             await self.send_message(client_id, {
                 "type": "config_updated",
                 "config_type": "preferences",
-                "data": settings.user_preferences.dict(),
+                "data": settings.user_preferences.model_dump(),
                 "timestamp": datetime.now().isoformat()
             })
     
@@ -195,7 +195,7 @@ class WebSocketManager:
             # Send current discovered services
             await self.send_message(client_id, {
                 "type": "discovered_services",
-                "data": settings.discovered_services.dict(),
+                "data": settings.discovered_services,
                 "timestamp": datetime.now().isoformat()
             })
     
@@ -290,8 +290,8 @@ class WebSocketManager:
             "client_id": client_id,
             "message": "Welcome to Olympian AI - The Divine Interface",
             "config": {
-                "discovered_services": settings.discovered_services.dict(),
-                "user_preferences": settings.user_preferences.dict(),
+                "discovered_services": settings.discovered_services,
+                "user_preferences": settings.user_preferences.model_dump(),
                 "active_services": settings.get_active_services()
             },
             "timestamp": datetime.now().isoformat()
