@@ -82,7 +82,8 @@ class Settings(BaseSettings):
     mcp_enabled: bool = Field(default=True, env="MCP_ENABLED")
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
     
-    # Project settings
+    # Data and Project settings
+    data_directory: str = Field(default="data", env="DATA_DIR")
     projects_dir: str = Field(default="data/projects", env="PROJECTS_DIR")
     max_context_size: int = Field(default=100000, env="MAX_CONTEXT_SIZE")
     
@@ -109,6 +110,11 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"  # Allow extra fields without validation errors
+    
+    @property
+    def data_dir(self) -> Path:
+        """Get data directory as Path object"""
+        return Path(self.data_directory)
     
     @field_validator("cors_origins", mode="before")
     @classmethod
