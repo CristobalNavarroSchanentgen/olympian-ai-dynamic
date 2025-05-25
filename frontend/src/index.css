@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 270 100% 25%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 45 100% 50%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 197 71% 73%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 270 100% 25%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 40% 98%;
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 40% 98%;
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 270 100% 50%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 45 100% 50%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 197 71% 73%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 270 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Philosopher', sans-serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Cinzel', serif;
+  }
+  
+  .font-ancient {
+    font-family: 'Uncial Antiqua', cursive;
+  }
+}
+
+/* Divine scrollbar styling */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-zeus-dark;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gradient-to-b from-olympus-gold to-olympus-gold-dark;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply from-olympus-gold-light to-olympus-gold;
+}
+
+/* Divine animations */
+@keyframes divine-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 215, 0, 0);
+  }
+}
+
+.divine-pulse {
+  animation: divine-pulse 2s ease-in-out infinite;
+}
+
+/* Lightning effect */
+.lightning-text {
+  background: linear-gradient(
+    to right,
+    #FFD700 0%,
+    #FFF8DC 25%,
+    #FFD700 50%,
+    #FFF8DC 75%,
+    #FFD700 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Marble texture effect */
+.marble-bg {
+  position: relative;
+  background: #F8F8FF;
+}
+
+.marble-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 215, 0, 0.03) 10px,
+      rgba(255, 215, 0, 0.03) 20px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 10px,
+      rgba(75, 0, 130, 0.03) 10px,
+      rgba(75, 0, 130, 0.03) 20px
+    );
+  pointer-events: none;
+}
+
+/* Divine card hover effect */
+.divine-card {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.divine-card:hover {
+  @apply shadow-divine-lg transform -translate-y-1;
+}
+
+/* Thunder button effect */
+.thunder-button {
+  @apply relative overflow-hidden;
+}
+
+.thunder-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.thunder-button:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Divine tooltip */
+.divine-tooltip {
+  @apply bg-gradient-to-r from-zeus-primary to-zeus-primary/90;
+  @apply text-white px-3 py-2 rounded-lg shadow-thunder;
+  @apply text-sm font-medium;
+}
+
+/* Custom focus styles */
+.divine-focus {
+  @apply focus:outline-none focus:ring-2 focus:ring-olympus-gold focus:ring-offset-2;
+  @apply focus:ring-offset-zeus-dark;
+}
