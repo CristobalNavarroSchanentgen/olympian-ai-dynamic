@@ -626,7 +626,6 @@ const SacredOllamaEndpoints: React.FC<SacredOllamaEndpointsProps> = ({ className
                           onCheckedChange={(checked) => 
                             updateEndpoint(endpoint.url, { enabled: checked })
                           }
-                          size="sm"
                         />
                         
                         <Button
