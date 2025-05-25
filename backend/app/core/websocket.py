@@ -8,6 +8,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from .config import settings
+from .service_manager import get_ollama_service, get_mcp_service, get_project_service
 
 
 def safe_model_dump(obj):
@@ -28,22 +29,6 @@ class WebSocketManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_metadata: Dict[str, Dict[str, Any]] = {}
-        
-        # Initialize services safely - don't fail if they're not available
-        self.ollama_service = None
-        self.mcp_service = None
-        
-        try:
-            from ..services.ollama_service import OllamaService
-            self.ollama_service = OllamaService()
-        except Exception as e:
-            logger.warning(f"Could not initialize Ollama service: {e}")
-        
-        try:
-            from ..services.mcp_service import MCPService
-            self.mcp_service = MCPService()
-        except Exception as e:
-            logger.warning(f"Could not initialize MCP service: {e}")
         
         self._message_handlers = {
             "chat": self._handle_chat_message,
@@ -125,12 +110,16 @@ class WebSocketManager:
         content = message.get("content", "")
         model = message.get("model") or self.connection_metadata[client_id].get("active_model")
         project_id = message.get("project_id") or self.connection_metadata[client_id].get("project_id")
+        system_prompt = message.get("system_prompt")
+        
+        logger.info(f"💬 Chat message from {client_id}: model={model}, content_length={len(content)}")
         
         if not model:
             await self.send_error(client_id, "No model selected")
             return
         
-        if not self.ollama_service:
+        ollama_service = get_ollama_service()
+        if not ollama_service:
             await self.send_error(client_id, "Ollama service not available")
             return
         
@@ -143,7 +132,16 @@ class WebSocketManager:
         
         # Stream response from Ollama
         try:
-            async for chunk in self.ollama_service.stream_chat(model, content, project_id=project_id):
+            logger.info(f"🔮 Starting chat stream for {client_id} with model {model}")
+            
+            response_chunks = []
+            async for chunk in ollama_service.stream_chat(
+                model=model, 
+                message=content, 
+                system_prompt=system_prompt,
+                project_id=project_id
+            ):
+                response_chunks.append(chunk)
                 await self.send_message(client_id, {
                     "type": "chat_response",
                     "content": chunk,
@@ -157,11 +155,14 @@ class WebSocketManager:
                 "type": "chat_response",
                 "streaming": False,
                 "complete": True,
+                "total_chunks": len(response_chunks),
                 "timestamp": datetime.now().isoformat()
             })
+            
+            logger.info(f"✅ Chat stream completed for {client_id}: {len(response_chunks)} chunks")
         
         except Exception as e:
-            logger.error(f"Error in chat handler: {e}")
+            logger.error(f"❌ Error in chat handler for {client_id}: {e}")
             await self.send_error(client_id, f"Chat error: {str(e)}")
     
     async def _handle_config_update(self, client_id: str, message: Dict[str, Any]):
@@ -272,12 +273,14 @@ class WebSocketManager:
         })
         
         # Route to appropriate generation service
+        mcp_service = get_mcp_service()
+        
         if generation_type == "image":
             # Image generation logic
             pass
         elif generation_type == "code":
             # Code generation with MCP tools
-            if self.mcp_service and self.mcp_service.is_connected():
+            if mcp_service and mcp_service.is_connected():
                 # Use MCP for code generation
                 pass
         elif generation_type == "audio":
@@ -332,6 +335,7 @@ class WebSocketManager:
         
         try:
             await websocket.send_json(welcome_data)
+            logger.info(f"📨 Welcome message sent to {client_id}")
         except Exception as e:
             logger.error(f"Error sending welcome message: {e}")
     
@@ -410,6 +414,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
                 # Receive message
                 data = await websocket.receive_text()
                 message = json.loads(data)
+                
+                logger.debug(f"📨 Received message from {actual_client_id}: {message.get('type', 'unknown')}")
                 
                 # Handle the message
                 await ws_manager.handle_message(websocket, message)
