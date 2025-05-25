@@ -9,7 +9,7 @@ import aiohttp
 
 from ..core.config import settings
 from ..core.websocket import WebSocketManager
-from ..core.discovery import ServiceDiscovery
+from ..core.discovery import discovery_engine  # Fixed import - use the global instance
 
 router = APIRouter()
 ws_manager = WebSocketManager()
@@ -387,10 +387,8 @@ async def reorder_endpoints(endpoint_priorities: Dict[str, int]):
 async def trigger_ollama_discovery(background_tasks: BackgroundTasks):
     """Trigger Ollama-specific service discovery"""
     try:
-        discovery = ServiceDiscovery()
-        
         # Add background task to perform discovery
-        background_tasks.add_task(_perform_ollama_discovery, discovery)
+        background_tasks.add_task(_perform_ollama_discovery)
         
         return {
             "status": "discovery_started",
@@ -402,15 +400,25 @@ async def trigger_ollama_discovery(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail="Failed to start discovery")
 
 
-async def _perform_ollama_discovery(discovery: ServiceDiscovery):
+async def _perform_ollama_discovery():
     """Background task to perform Ollama discovery"""
     try:
-        await discovery.discover_ollama_services()
+        # Use the global discovery engine instance
+        ollama_data = await discovery_engine.discover_ollama_instances()
+        
+        # Update settings with discovered data
+        if "ollama" not in settings.discovered_services:
+            settings.discovered_services["ollama"] = {}
+        
+        settings.discovered_services["ollama"].update(ollama_data)
         
         # Notify clients when discovery completes
         await ws_manager.notify_config_change(
             "ollama_discovery_completed",
-            {"timestamp": datetime.now().isoformat()}
+            {
+                "discovered": ollama_data,
+                "timestamp": datetime.now().isoformat()
+            }
         )
     except Exception as e:
         logger.error(f"Ollama discovery failed: {e}")
