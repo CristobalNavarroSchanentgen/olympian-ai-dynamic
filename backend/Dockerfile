@@ -4,14 +4,11 @@
 # Stage 1: Builder
 FROM python:3.11-slim as builder
 
-# Fix for GPG signature issues
+# Install build dependencies with GPG workaround
 RUN rm -rf /var/lib/apt/lists/* && \
     apt-get clean && \
-    apt-get update --allow-releaseinfo-change || true && \
-    apt-get update --allow-unauthenticated || true
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+    apt-get update -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true && \
+    apt-get install -y -o APT::Get::AllowUnauthenticated=true \
     gcc \
     g++ \
     libffi-dev \
@@ -28,14 +25,11 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 # Stage 2: Runtime
 FROM python:3.11-slim
 
-# Fix for GPG signature issues
+# Install runtime dependencies with GPG workaround
 RUN rm -rf /var/lib/apt/lists/* && \
     apt-get clean && \
-    apt-get update --allow-releaseinfo-change || true && \
-    apt-get update --allow-unauthenticated || true
-
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y \
+    apt-get update -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true && \
+    apt-get install -y -o APT::Get::AllowUnauthenticated=true \
     nmap \
     curl \
     && rm -rf /var/lib/apt/lists/* \
