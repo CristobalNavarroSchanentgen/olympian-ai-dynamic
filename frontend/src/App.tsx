@@ -13,8 +13,8 @@ import { ConfigProvider } from '@/contexts/ConfigContext'
 function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="olympian-theme">
-      <ConfigProvider>
-        <WebSocketProvider>
+      <WebSocketProvider>
+        <ConfigProvider>
           <Layout>
             <Routes>
               <Route path="/" element={<DivineDashboard />} />
@@ -27,8 +27,8 @@ function App() {
             </Routes>
           </Layout>
           <Toaster />
-        </WebSocketProvider>
-      </ConfigProvider>
+        </ConfigProvider>
+      </WebSocketProvider>
     </ThemeProvider>
   )
 }
