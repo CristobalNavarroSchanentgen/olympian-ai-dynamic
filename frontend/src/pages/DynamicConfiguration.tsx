@@ -83,7 +83,7 @@ export default function DynamicConfiguration() {
     })
     
     // MCP servers
-    discoveredServices.mcp_servers?.configured?.forEach(server => {
+    discoveredServices.mcp_servers?.configured?.forEach((server: any) => {
       statuses.push({
         type: 'mcp',
         name: `MCP ${server.type}`,
@@ -95,14 +95,23 @@ export default function DynamicConfiguration() {
       })
     })
     
-    // Webhooks
-    discoveredServices.webhooks?.endpoints?.forEach(webhook => {
-      statuses.push({
-        type: 'webhook',
-        name: `Webhook ${webhook.type}`,
-        endpoint: webhook.url,
-        status: webhook.configured ? 'connected' : 'disconnected'
-      })
+    // Webhooks - handle both string and object formats
+    discoveredServices.webhooks?.endpoints?.forEach((webhook: any) => {
+      if (typeof webhook === 'string') {
+        statuses.push({
+          type: 'webhook',
+          name: 'Webhook',
+          endpoint: webhook,
+          status: 'disconnected'
+        })
+      } else if (webhook && typeof webhook === 'object') {
+        statuses.push({
+          type: 'webhook',
+          name: `Webhook ${webhook.type || ''}`,
+          endpoint: webhook.url || webhook.endpoint,
+          status: webhook.configured ? 'connected' : 'disconnected'
+        })
+      }
     })
     
     setServiceStatuses(statuses)
