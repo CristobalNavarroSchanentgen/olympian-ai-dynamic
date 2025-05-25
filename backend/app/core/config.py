@@ -1,6 +1,6 @@
 """Configuration settings for Olympian AI"""
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 import yaml
@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     
     # API settings
     api_prefix: str = "/api"
-    cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
+    cors_origins: Union[str, List[str]] = Field(
+        default="http://localhost:3000,http://localhost:5173",
         env="CORS_ORIGINS"
     )
     
@@ -89,27 +89,8 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v):
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
-            # Try to parse as JSON first
-            import json
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return parsed
-            except:
-                pass
-            
-            # If not JSON, treat as comma-separated string
-            if ',' in v:
-                return [origin.strip() for origin in v.split(",")]
-            
-            # Single origin
-            return [v.strip()] if v.strip() else ["http://localhost:3000", "http://localhost:5173"]
-        
-        if isinstance(v, list):
-            return v
-        
-        # Default fallback
-        return ["http://localhost:3000", "http://localhost:5173"]
+            return [origin.strip() for origin in v.split(",")]
+        return v
     
     @field_validator("mcp_servers", mode="before")
     @classmethod
