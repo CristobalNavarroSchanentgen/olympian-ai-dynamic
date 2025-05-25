@@ -3,7 +3,9 @@
 
 .PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend \
         test test-backend test-frontend test-coverage test-watch lint format \
-        build deploy clean test-unit test-integration
+        build deploy clean test-unit test-integration docker docker-down \
+        docker-build docker-prod docker-logs docker-shell docker-clean \
+        mongodb-shell redis-cli backup-mongodb
 
 # Default target
 .DEFAULT_GOAL := help
@@ -13,6 +15,7 @@ PYTHON := python3
 PIP := pip
 NPM := npm
 DOCKER_COMPOSE := docker-compose
+DOCKER_COMPOSE_PROD := docker-compose -f docker-compose.prod.yml
 
 # Colors for output
 RED := \033[0;31m
@@ -78,15 +81,91 @@ dev-frontend:
 	@echo "${BLUE}Starting frontend...${NC}"
 	cd frontend && $(NPM) run dev
 
-## docker: Run application using Docker Compose
+## docker: Run application using Docker Compose (development)
 docker:
 	@echo "${BLUE}Starting Olympian AI with Docker...${NC}"
-	$(DOCKER_COMPOSE) up --build
+	$(DOCKER_COMPOSE) up
+
+## docker-build: Build Docker images
+docker-build:
+	@echo "${BLUE}Building Docker images...${NC}"
+	$(DOCKER_COMPOSE) build --no-cache
+
+## docker-up: Start Docker services in background
+docker-up:
+	@echo "${BLUE}Starting Docker services in background...${NC}"
+	$(DOCKER_COMPOSE) up -d
 
 ## docker-down: Stop Docker Compose services
 docker-down:
 	@echo "${BLUE}Stopping Docker services...${NC}"
 	$(DOCKER_COMPOSE) down
+
+## docker-prod: Run production Docker setup
+docker-prod:
+	@echo "${BLUE}Starting production Docker setup...${NC}"
+	$(DOCKER_COMPOSE_PROD) up -d
+
+## docker-prod-down: Stop production Docker services
+docker-prod-down:
+	@echo "${BLUE}Stopping production Docker services...${NC}"
+	$(DOCKER_COMPOSE_PROD) down
+
+## docker-logs: View Docker logs
+docker-logs:
+	$(DOCKER_COMPOSE) logs -f
+
+## docker-logs-backend: View backend logs
+docker-logs-backend:
+	$(DOCKER_COMPOSE) logs -f backend
+
+## docker-logs-frontend: View frontend logs
+docker-logs-frontend:
+	$(DOCKER_COMPOSE) logs -f frontend
+
+## docker-shell-backend: Open shell in backend container
+docker-shell-backend:
+	$(DOCKER_COMPOSE) exec backend /bin/bash
+
+## docker-shell-frontend: Open shell in frontend container
+docker-shell-frontend:
+	$(DOCKER_COMPOSE) exec frontend /bin/sh
+
+## docker-clean: Clean Docker resources
+docker-clean:
+	@echo "${RED}Cleaning Docker resources...${NC}"
+	$(DOCKER_COMPOSE) down -v
+	docker system prune -af
+	@echo "${GREEN}✓ Docker cleanup complete${NC}"
+
+## mongodb-shell: Access MongoDB shell
+mongodb-shell:
+	@echo "${BLUE}Connecting to MongoDB...${NC}"
+	$(DOCKER_COMPOSE) exec mongodb mongosh olympian_ai
+
+## mongodb-backup: Backup MongoDB database
+mongodb-backup:
+	@echo "${BLUE}Backing up MongoDB...${NC}"
+	mkdir -p backups/mongodb/$(shell date +%Y%m%d_%H%M%S)
+	$(DOCKER_COMPOSE) exec mongodb mongodump --db olympian_ai --out /backup/$(shell date +%Y%m%d_%H%M%S)
+	@echo "${GREEN}✓ MongoDB backup complete${NC}"
+
+## mongodb-restore: Restore MongoDB from backup (usage: make mongodb-restore BACKUP=20240525_120000)
+mongodb-restore:
+	@echo "${BLUE}Restoring MongoDB from backup...${NC}"
+	$(DOCKER_COMPOSE) exec mongodb mongorestore --db olympian_ai /backup/$(BACKUP)/olympian_ai
+	@echo "${GREEN}✓ MongoDB restore complete${NC}"
+
+## redis-cli: Access Redis CLI
+redis-cli:
+	@echo "${BLUE}Connecting to Redis...${NC}"
+	$(DOCKER_COMPOSE) exec redis redis-cli
+
+## redis-flush: Flush Redis cache
+redis-flush:
+	@echo "${RED}Flushing Redis cache...${NC}"
+	$(DOCKER_COMPOSE) exec redis redis-cli FLUSHALL
+	@echo "${GREEN}✓ Redis cache flushed${NC}"
 
 ## test: Run all tests with coverage
 test: test-backend test-frontend
@@ -176,8 +255,8 @@ format-frontend:
 ## build: Build production images
 build:
 	@echo "${BLUE}Building production images...${NC}"
-	docker build -t olympian-backend ./backend
-	docker build -t olympian-frontend ./frontend
+	docker build -t olympian-backend:latest ./backend
+	docker build -t olympian-frontend:latest ./frontend
 	@echo "${GREEN}✓ Build complete!${NC}"
 
 ## clean: Clean all generated files and dependencies
@@ -193,6 +272,14 @@ clean:
 scan-services:
 	@echo "${BLUE}Triggering service discovery...${NC}"
 	curl -X GET http://localhost:8000/api/discovery/scan
+
+## health-check: Check health of all services
+health-check:
+	@echo "${BLUE}Checking service health...${NC}"
+	@curl -s http://localhost:8000/health | jq . || echo "Backend: ${RED}Unhealthy${NC}"
+	@curl -s http://localhost/ > /dev/null && echo "Frontend: ${GREEN}Healthy${NC}" || echo "Frontend: ${RED}Unhealthy${NC}"
+	@$(DOCKER_COMPOSE) exec -T redis redis-cli ping > /dev/null && echo "Redis: ${GREEN}Healthy${NC}" || echo "Redis: ${RED}Unhealthy${NC}"
+	@$(DOCKER_COMPOSE) exec -T mongodb mongosh --eval "db.adminCommand('ping')" > /dev/null && echo "MongoDB: ${GREEN}Healthy${NC}" || echo "MongoDB: ${RED}Unhealthy${NC}"
 
 ## system-info: Display system information
 system-info:
@@ -223,13 +310,14 @@ optimize:
 	@echo "${BLUE}Optimizing system...${NC}"
 	curl -X POST http://localhost:8000/api/system/optimize
 
-## backup: Create backup of configuration and data
+## backup: Create backup of all data
 backup:
-	@echo "${BLUE}Creating backup...${NC}"
-	mkdir -p backups/$(shell date +%Y%m%d)
-	cp backend/config.yaml backups/$(shell date +%Y%m%d)/
-	tar -czf backups/$(shell date +%Y%m%d)/data.tar.gz backend/data/
-	@echo "${GREEN}✓ Backup created in backups/$(shell date +%Y%m%d)${NC}"
+	@echo "${BLUE}Creating full backup...${NC}"
+	mkdir -p backups/$(shell date +%Y%m%d_%H%M%S)
+	@make mongodb-backup
+	cp backend/config.yaml backups/$(shell date +%Y%m%d_%H%M%S)/
+	tar -czf backups/$(shell date +%Y%m%d_%H%M%S)/data.tar.gz backend/data/
+	@echo "${GREEN}✓ Full backup created in backups/$(shell date +%Y%m%d_%H%M%S)${NC}"
 
 # Hidden targets for CI/CD
 .PHONY: ci-test ci-build ci-deploy
