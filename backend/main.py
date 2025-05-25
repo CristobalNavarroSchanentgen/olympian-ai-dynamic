@@ -84,6 +84,7 @@ async def root():
             "docs": "/docs",
             "redoc": "/redoc",
             "health": "/health",
+            "websocket": "/ws/{client_id}",
             "api": {
                 "chat": "/api/chat",
                 "ollama": "/api/ollama",
@@ -121,7 +122,10 @@ app.include_router(mcp.router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 
 # Add WebSocket endpoint
-app.add_api_websocket_route("/ws/{client_id}", websocket_endpoint)
+@app.websocket("/ws/{client_id}")
+async def websocket_route(websocket, client_id: str = None):
+    """WebSocket endpoint for real-time communication"""
+    await websocket_endpoint(websocket, client_id)
 
 
 # Global exception handler
@@ -151,6 +155,7 @@ async def startup_message():
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"API URL: http://localhost:8000")
     logger.info(f"Docs URL: http://localhost:8000/docs")
+    logger.info(f"WebSocket URL: ws://localhost:8000/ws/{{client_id}}")
     logger.info("=" * 60)
 
 
