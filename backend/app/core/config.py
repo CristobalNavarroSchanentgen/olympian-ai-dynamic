@@ -2,7 +2,7 @@
 import os
 from typing import List, Dict, Any, Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, validator, field_validator
 import yaml
 from pathlib import Path
 
@@ -84,8 +84,8 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
     
-    @validator("cors_origins", pre=True)
-    def parse_cors_origins(cls, v):
+    @field_validator("cors_origins", mode="before")
+    @classmethod    def parse_cors_origins(cls, v):
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
