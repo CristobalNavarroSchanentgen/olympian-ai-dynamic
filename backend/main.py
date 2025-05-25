@@ -22,6 +22,9 @@ from app.api import (
 )
 from app.core.websocket import websocket_endpoint
 from app.core.config import settings
+from app.core.discovery import discovery_engine
+from app.services.ollama_service import OllamaService
+from app.services.mcp_service import MCPService
 
 # Configure logger
 logger.add(
@@ -31,6 +34,10 @@ logger.add(
     level="INFO"
 )
 
+# Global service instances
+ollama_service = OllamaService()
+mcp_service = MCPService()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,16 +45,40 @@ async def lifespan(app: FastAPI):
     logger.info("🏛️ Olympian AI starting up...")
     
     # Startup tasks
-    # TODO: Initialize database connections
-    # TODO: Start background tasks
-    # TODO: Run initial service discovery
+    try:
+        # Initialize discovery engine
+        await discovery_engine.start()
+        logger.info("🔍 Discovery engine started")
+        
+        # Run initial service discovery
+        discovered_data = await discovery_engine.full_scan()
+        logger.info("✨ Initial service discovery completed")
+        
+        # Update settings with discovered services
+        if "services" in discovered_data:
+            settings.discovered_services = discovered_data["services"]
+            logger.info(f"📋 Updated settings with {len(discovered_data['services'])} service types")
+        
+        # Initialize services with discovered endpoints
+        await ollama_service.initialize()
+        await mcp_service.initialize()
+        
+        logger.info("🎯 All services initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during startup: {e}")
     
     yield
     
     # Shutdown tasks
     logger.info("🌅 Olympian AI shutting down...")
-    # TODO: Close database connections
-    # TODO: Cancel background tasks
+    try:
+        discovery_engine.stop()
+        await ollama_service.close()
+        await mcp_service.close()
+        logger.info("✅ Graceful shutdown completed")
+    except Exception as e:
+        logger.error(f"❌ Error during shutdown: {e}")
 
 
 # Create FastAPI application
@@ -108,7 +139,12 @@ async def health_check():
         "status": "healthy",
         "service": "Olympian AI Backend",
         "version": "1.0.0",
-        "timestamp": os.popen('date').read().strip()
+        "timestamp": os.popen('date').read().strip(),
+        "services": {
+            "discovery_engine": "active" if discovery_engine._running else "inactive",
+            "ollama_endpoints": len(ollama_service.get_active_endpoints()),
+            "discovered_services": len(settings.discovered_services)
+        }
     }
 
 
