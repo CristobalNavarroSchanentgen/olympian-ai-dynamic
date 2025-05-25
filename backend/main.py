@@ -23,8 +23,10 @@ from app.api import (
 from app.core.websocket import websocket_endpoint
 from app.core.config import settings
 from app.core.discovery import discovery_engine
+from app.core.service_manager import set_ollama_service, set_mcp_service, set_project_service
 from app.services.ollama_service import OllamaService
 from app.services.mcp_service import MCPService
+from app.services.project_service import ProjectService
 
 # Configure logger
 logger.add(
@@ -37,6 +39,7 @@ logger.add(
 # Global service instances
 ollama_service = OllamaService()
 mcp_service = MCPService()
+project_service = ProjectService()
 
 
 @asynccontextmanager
@@ -63,7 +66,12 @@ async def lifespan(app: FastAPI):
         await ollama_service.initialize()
         await mcp_service.initialize()
         
-        logger.info("🎯 All services initialized successfully")
+        # Register services globally
+        set_ollama_service(ollama_service)
+        set_mcp_service(mcp_service)
+        set_project_service(project_service)
+        
+        logger.info("🎯 All services initialized and registered successfully")
         
     except Exception as e:
         logger.error(f"❌ Error during startup: {e}")
