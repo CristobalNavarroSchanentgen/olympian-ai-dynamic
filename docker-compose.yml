@@ -43,6 +43,8 @@ services:
       - MONGODB_DATABASE=olympian_ai
       - DISCOVERY_ENABLED=true
       - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:443
+      # Connect to Ollama on host machine
+      - OLLAMA_ENDPOINTS=http://host.docker.internal:11434
     volumes:
       - ./backend/data:/app/data
       - ./backend/logs:/app/logs
@@ -55,6 +57,9 @@ services:
     networks:
       - olympian-network
     restart: unless-stopped
+    # Add extra_hosts for Linux compatibility (host.docker.internal doesn't work on Linux)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -107,42 +112,12 @@ services:
       timeout: 10s
       retries: 3
 
-  # Ollama LLM Service
-  ollama:
-    image: ollama/ollama:latest
-    container_name: olympian-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
-      - OLLAMA_HOST=0.0.0.0
-    networks:
-      - olympian-network
-    restart: unless-stopped
-    # Note: GPU support requires nvidia-docker
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
 volumes:
   mongodb-data:
     driver: local
   mongodb-config:
     driver: local
   redis-data:
-    driver: local
-  ollama-data:
     driver: local
   nginx-cache:
     driver: local
