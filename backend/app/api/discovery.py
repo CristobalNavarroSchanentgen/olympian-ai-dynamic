@@ -27,7 +27,7 @@ async def trigger_discovery_scan(background_tasks: BackgroundTasks):
 async def run_discovery_scan():
     """Run discovery scan and notify clients"""
     try:
-        await discovery_engine.scan_all_services()
+        await discovery_engine.full_scan()
         
         # Notify all connected clients
         await ws_manager.notify_service_update(
@@ -45,7 +45,7 @@ async def get_discovery_status():
     return {
         "status": "active",
         "discovered_services": discovery_engine.get_discovered_services(),
-        "service_health": discovery_engine.service_health,
+        "service_health": await discovery_engine.get_service_health(),
         "last_scan": discovery_engine._last_scan
     }
 
@@ -55,13 +55,13 @@ async def get_service_details(service_type: str):
     """Get detailed information about a specific service type"""
     services = discovery_engine.get_discovered_services()
     
-    if service_type not in services:
+    if service_type not in services.get("services", {}):
         raise HTTPException(status_code=404, detail=f"Service type '{service_type}' not found")
     
     return {
         "service_type": service_type,
-        "details": services[service_type],
-        "capabilities": discovery_engine.get_service_capabilities(service_type)
+        "details": services["services"][service_type],
+        "capabilities": services["services"][service_type].get("capabilities", {})
     }
 
 
@@ -74,20 +74,23 @@ async def add_manual_service(service_config: Dict[str, Any]):
     if not service_type or not endpoint:
         raise HTTPException(status_code=400, detail="Missing 'type' or 'endpoint'")
     
-    # Test the connection
-    test_result = await discovery_engine.test_service_connection(service_type, service_config)
+    # Test the connection based on service type
+    if service_type == "ollama":
+        test_result = await discovery_engine._check_ollama_endpoint(endpoint)
+        success = test_result
+        message = "Connection successful" if success else "Connection failed"
+    else:
+        success = False
+        message = f"Service type '{service_type}' not supported for manual addition"
     
-    if not test_result["success"]:
-        raise HTTPException(status_code=400, detail=test_result["message"])
-    
-    # Add to configuration
-    # This would be implemented based on service type
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
     
     return {
         "status": "added",
         "service_type": service_type,
         "endpoint": endpoint,
-        "test_result": test_result
+        "test_result": {"success": success, "message": message}
     }
 
 
