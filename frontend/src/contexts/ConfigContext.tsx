@@ -41,8 +41,8 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined)
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [discoveredServices, setDiscoveredServices] = useState<DiscoveredServices>({
     ollama: { endpoints: [], models: [], capabilities: {} },
-    mcp_servers: { available: [], configured: [] },
-    webhooks: { available_types: [], endpoints: [] },
+    mcp_servers: { endpoints: [], available: [], configured: [] },
+    webhooks: { endpoints: [], available_types: [] },
   })
   const [userPreferences, setUserPreferences] = useState<UserPreferences>({
     preferred_models: [],
@@ -110,7 +110,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
-    const unsubscribeConfigUpdate = subscribe('config_updated', (message) => {
+    const unsubscribeConfigUpdate = subscribe('config_updated', () => {
       fetchConfig() // Refresh entire config when something changes
     })
 
