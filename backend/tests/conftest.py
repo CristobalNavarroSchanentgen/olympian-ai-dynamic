@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from fastapi.testclient import TestClient
+from fastapi import FastAPI
 from httpx import AsyncClient
 
 
@@ -24,10 +25,15 @@ def event_loop():
 
 
 @pytest.fixture
-def client():
-    """Create FastAPI test client"""
-    # Import here to avoid circular imports
+def app():
+    """Create FastAPI app for testing"""
     from main import app
+    return app
+
+
+@pytest.fixture
+def client(app):
+    """Create FastAPI test client"""
     return TestClient(app)
 
 
