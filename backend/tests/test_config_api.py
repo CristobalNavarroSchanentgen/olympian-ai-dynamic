@@ -1,51 +1,8 @@
 """Tests for Configuration API endpoints"""
 import pytest
 from unittest.mock import patch, Mock, mock_open
-from fastapi.testclient import TestClient
-from fastapi import FastAPI
 import yaml
 import json
-
-from app.api.config import router
-
-
-@pytest.fixture
-def app():
-    """Create FastAPI app with config router"""
-    app = FastAPI()
-    app.include_router(router, prefix="/config")
-    return app
-
-
-@pytest.fixture
-def client(app):
-    """Create test client"""
-    return TestClient(app)
-
-
-@pytest.fixture
-def sample_config():
-    """Sample configuration data"""
-    return {
-        "app": {
-            "name": "Olympian AI",
-            "version": "1.0.0",
-            "environment": "development"
-        },
-        "services": {
-            "ollama": {
-                "base_url": "http://localhost:11434",
-                "timeout": 30
-            },
-            "mcp": {
-                "servers": []
-            }
-        },
-        "security": {
-            "jwt_algorithm": "HS256",
-            "cors_origins": ["http://localhost:3000"]
-        }
-    }
 
 
 class TestConfigAPI:
@@ -54,277 +11,271 @@ class TestConfigAPI:
     def test_get_config(self, client, mock_settings):
         """Test getting current configuration"""
         with patch('app.api.config.settings', mock_settings):
-            response = client.get("/config")
+            # Use the correct endpoint - /api/config/dynamic instead of /config
+            response = client.get("/api/config/dynamic")
             
             assert response.status_code == 200
             data = response.json()
-            assert "environment" in data
+            assert "server" in data
             assert "discovered_services" in data
-            assert data["environment"] == "test"
+            assert "user_preferences" in data
+            assert data["server"]["environment"] == "test"
     
     
-    def test_get_config_section(self, client, mock_settings):
-        """Test getting specific configuration section"""
+    def test_get_user_preferences(self, client, mock_settings):
+        """Test getting user preferences"""
         with patch('app.api.config.settings', mock_settings):
-            response = client.get("/config/discovered_services")
+            response = client.get("/api/config/preferences")
             
             assert response.status_code == 200
             data = response.json()
-            assert "ollama" in data
-            assert "endpoints" in data["ollama"]
+            assert "preferences" in data
+            assert "timestamp" in data
     
     
-    def test_get_config_nested_section(self, client, mock_settings):
-        """Test getting nested configuration section"""
+    def test_update_user_preferences(self, client, mock_settings):
+        """Test updating user preferences"""
+        # Mock user preferences as a proper object
+        mock_user_prefs = Mock()
+        mock_user_prefs.preferred_models = ["llama2:7b"]
+        mock_user_prefs.custom_endpoints = []
+        mock_user_prefs.disabled_services = []
+        mock_user_prefs.manual_overrides = {}
+        mock_settings.user_preferences = mock_user_prefs
+        mock_settings.save_config = Mock()
+        
         with patch('app.api.config.settings', mock_settings):
-            response = client.get("/config/discovered_services/ollama")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert "endpoints" in data
-            assert "models" in data
-            assert "capabilities" in data
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.put("/api/config/preferences", json={
+                    "preferred_models": ["llama2:13b", "mistral:7b"]
+                })
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "updated"
+                assert "preferences" in data
+                mock_settings.save_config.assert_called_once()
     
     
-    def test_get_config_invalid_section(self, client, mock_settings):
-        """Test getting non-existent configuration section"""
+    def test_add_service_override(self, client, mock_settings):
+        """Test adding service override"""
+        mock_user_prefs = Mock()
+        mock_user_prefs.manual_overrides = {}
+        mock_settings.user_preferences = mock_user_prefs
+        mock_settings.save_config = Mock()
+        
         with patch('app.api.config.settings', mock_settings):
-            response = client.get("/config/invalid_section")
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.post("/api/config/override", json={
+                    "service_type": "ollama",
+                    "config": {"timeout": 60}
+                })
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "added"
+                assert data["service_type"] == "ollama"
+                mock_settings.save_config.assert_called_once()
+    
+    
+    def test_remove_service_override(self, client, mock_settings):
+        """Test removing service override"""
+        mock_user_prefs = Mock()
+        mock_user_prefs.manual_overrides = {"ollama": {"timeout": 60}}
+        mock_settings.user_preferences = mock_user_prefs
+        mock_settings.save_config = Mock()
+        
+        with patch('app.api.config.settings', mock_settings):
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.delete("/api/config/override/ollama")
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "removed"
+                assert data["service_type"] == "ollama"
+    
+    
+    def test_remove_nonexistent_override(self, client, mock_settings):
+        """Test removing non-existent service override"""
+        mock_user_prefs = Mock()
+        mock_user_prefs.manual_overrides = {}
+        mock_settings.user_preferences = mock_user_prefs
+        
+        with patch('app.api.config.settings', mock_settings):
+            response = client.delete("/api/config/override/nonexistent")
             
             assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
+            assert "Override not found" in response.json()["detail"]
     
     
-    def test_update_config(self, client, sample_config):
-        """Test updating configuration"""
-        mock_file = mock_open()
+    def test_get_cors_origins(self, client, mock_settings):
+        """Test getting CORS origins"""
+        mock_settings.cors_origins = ["http://localhost:3000", "http://localhost:8080"]
         
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                with patch('yaml.safe_load', return_value=sample_config):
-                    response = client.put("/config", json={
-                        "services": {
-                            "ollama": {
-                                "timeout": 60
-                            }
-                        }
-                    })
-                    
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["status"] == "updated"
-                    
-                    # Check that yaml.dump was called
-                    handle = mock_file()
-                    assert handle.write.called
+        with patch('app.api.config.settings', mock_settings):
+            response = client.get("/api/config/cors")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "origins" in data
+            assert data["count"] == 2
+            assert "http://localhost:3000" in data["origins"]
     
     
-    def test_update_config_section(self, client, sample_config):
-        """Test updating specific configuration section"""
-        mock_file = mock_open()
+    def test_add_cors_origin(self, client, mock_settings):
+        """Test adding CORS origin"""
+        mock_settings.cors_origins = ["http://localhost:3000"]
+        mock_settings.add_cors_origin = Mock()
         
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                with patch('yaml.safe_load', return_value=sample_config):
-                    response = client.put("/config/services/ollama", json={
-                        "timeout": 60,
-                        "max_retries": 3
-                    })
-                    
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["status"] == "updated"
-                    assert data["section"] == "services/ollama"
+        with patch('app.api.config.settings', mock_settings):
+            response = client.post("/api/config/cors/add?origin=http://localhost:8080")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "added"
+            assert data["origin"] == "http://localhost:8080"
+            mock_settings.add_cors_origin.assert_called_once_with("http://localhost:8080")
     
     
-    def test_validate_config(self, client):
-        """Test configuration validation"""
-        config_data = {
-            "app": {
-                "name": "Test App"
-            },
-            "services": {
-                "ollama": {
-                    "base_url": "http://localhost:11434"
-                }
-            }
-        }
+    def test_remove_cors_origin(self, client, mock_settings):
+        """Test removing CORS origin"""
+        mock_settings.cors_origins = ["http://localhost:3000", "http://localhost:8080"]
+        mock_settings.save_config = Mock()
         
-        response = client.post("/config/validate", json=config_data)
+        with patch('app.api.config.settings', mock_settings):
+            response = client.delete("/api/config/cors/http://localhost:8080")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "removed"
+            assert data["origin"] == "http://localhost:8080"
+    
+    
+    def test_get_discovery_config(self, client, mock_settings):
+        """Test getting discovery configuration"""
+        mock_settings.is_service_discovery_enabled = Mock(return_value=True)
+        mock_settings.get_effective_scan_interval = Mock(return_value=30)
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["valid"] is True
-        assert "errors" in data
-        assert len(data["errors"]) == 0
+        with patch('app.api.config.settings', mock_settings):
+            response = client.get("/api/config/discovery")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "config" in data
+            assert data["enabled"] is True
+            assert data["scan_interval"] == 30
     
     
-    def test_validate_config_invalid(self, client):
-        """Test validation with invalid configuration"""
-        config_data = {
-            "services": {
-                "ollama": {
-                    "base_url": "not-a-url"  # Invalid URL
-                }
-            }
-        }
+    def test_update_discovery_config(self, client, mock_settings):
+        """Test updating discovery configuration"""
+        mock_settings.is_service_discovery_enabled = Mock(return_value=False)
+        mock_settings.get_effective_scan_interval = Mock(return_value=60)
+        mock_settings.save_config = Mock()
         
-        response = client.post("/config/validate", json=config_data)
+        with patch('app.api.config.settings', mock_settings):
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.put("/api/config/discovery?enabled=false&scan_interval=60")
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "updated"
+                assert "config" in data
+                mock_settings.save_config.assert_called_once()
+    
+    
+    def test_reset_configuration_preferences(self, client, mock_settings):
+        """Test resetting user preferences"""
+        mock_settings.save_config = Mock()
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["valid"] is False
-        assert len(data["errors"]) > 0
+        with patch('app.api.config.settings', mock_settings):
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.post("/api/config/reset?section=preferences")
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "reset"
+                assert data["section"] == "preferences"
+                mock_settings.save_config.assert_called_once()
     
     
-    def test_export_config(self, client, sample_config):
+    def test_reset_configuration_invalid_section(self, client, mock_settings):
+        """Test resetting with invalid section"""
+        with patch('app.api.config.settings', mock_settings):
+            response = client.post("/api/config/reset?section=invalid")
+            
+            assert response.status_code == 400
+            assert "Invalid section" in response.json()["detail"]
+    
+    
+    def test_export_configuration(self, client, mock_settings):
         """Test exporting configuration"""
-        with patch('yaml.safe_load', return_value=sample_config):
-            with patch('os.path.exists', return_value=True):
-                with patch('builtins.open', mock_open(read_data=yaml.dump(sample_config))):
-                    response = client.get("/config/export")
-                    
-                    assert response.status_code == 200
-                    assert response.headers["content-type"] == "application/x-yaml"
-                    assert "attachment" in response.headers["content-disposition"]
+        mock_settings.server_host = "localhost"
+        mock_settings.server_port = 8000
+        mock_settings.environment = "test"
+        mock_settings.debug = True
+        mock_settings.is_service_discovery_enabled = Mock(return_value=True)
+        mock_settings.get_effective_scan_interval = Mock(return_value=30)
+        mock_settings.jwt_algorithm = "HS256"
+        mock_settings.jwt_expiration_minutes = 60
+        mock_settings.cors_origins = ["http://localhost:3000"]
+        mock_settings.discovered_services = {}
+        
+        # Mock user preferences
+        mock_user_prefs = Mock()
+        mock_settings.user_preferences = mock_user_prefs
+        
+        with patch('app.api.config.settings', mock_settings):
+            with patch('app.api.config.safe_model_dump', return_value={}):
+                response = client.get("/api/config/export")
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert "version" in data
+                assert "exported_at" in data
+                assert "configuration" in data
+                assert data["version"] == "1.0.0"
     
     
-    def test_export_config_json(self, client, sample_config):
-        """Test exporting configuration as JSON"""
-        with patch('yaml.safe_load', return_value=sample_config):
-            with patch('os.path.exists', return_value=True):
-                with patch('builtins.open', mock_open(read_data=yaml.dump(sample_config))):
-                    response = client.get("/config/export?format=json")
-                    
-                    assert response.status_code == 200
-                    assert response.headers["content-type"] == "application/json"
-                    data = response.json()
-                    assert data == sample_config
-    
-    
-    def test_import_config(self, client):
+    def test_import_configuration(self, client, mock_settings):
         """Test importing configuration"""
-        config_data = {
-            "app": {"name": "Imported App"},
-            "services": {"ollama": {"base_url": "http://localhost:11434"}}
+        mock_settings.save_config = Mock()
+        
+        import_data = {
+            "version": "1.0.0",
+            "configuration": {
+                "user_preferences": {
+                    "preferred_models": ["llama2:7b"]
+                },
+                "cors_origins": ["http://localhost:3000"],
+                "server": {
+                    "discovery": {
+                        "enabled": True,
+                        "scan_interval": 30
+                    }
+                }
+            }
         }
         
-        mock_file = mock_open()
-        
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                response = client.post("/config/import", json=config_data)
+        with patch('app.api.config.settings', mock_settings):
+            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                response = client.post("/api/config/import", json=import_data)
                 
                 assert response.status_code == 200
                 data = response.json()
                 assert data["status"] == "imported"
-                assert data["validated"] is True
+                assert "timestamp" in data
+                mock_settings.save_config.assert_called_once()
     
     
-    def test_reset_config(self, client):
-        """Test resetting configuration to defaults"""
-        default_config = {
-            "app": {"name": "Olympian AI Default"},
-            "services": {}
+    def test_import_configuration_invalid_version(self, client, mock_settings):
+        """Test importing configuration with invalid version"""
+        import_data = {
+            "version": "2.0.0",  # Invalid version
+            "configuration": {}
         }
         
-        mock_file = mock_open()
-        
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                with patch('yaml.safe_load', return_value=default_config):
-                    response = client.post("/config/reset")
-                    
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["status"] == "reset"
-    
-    
-    def test_get_environment_info(self, client):
-        """Test getting environment information"""
-        with patch.dict('os.environ', {
-            'NODE_ENV': 'development',
-            'DATABASE_URL': 'postgresql://localhost/test',
-            'API_KEY': 'secret-key'
-        }):
-            response = client.get("/config/environment")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert "environment_variables" in data
-            assert "system_info" in data
-            # API keys should be masked
-            assert data["environment_variables"]["API_KEY"] == "***"
-    
-    
-    def test_get_services_status(self, client, mock_settings):
-        """Test getting services status"""
         with patch('app.api.config.settings', mock_settings):
-            with patch('httpx.AsyncClient') as mock_http:
-                # Mock health check responses
-                mock_response = Mock()
-                mock_response.status_code = 200
-                mock_http.return_value.__aenter__.return_value.get = Mock(return_value=mock_response)
-                
-                response = client.get("/config/services/status")
-                
-                assert response.status_code == 200
-                data = response.json()
-                assert "services" in data
-    
-    
-    def test_backup_config(self, client, sample_config):
-        """Test creating configuration backup"""
-        mock_file = mock_open()
-        
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                with patch('yaml.safe_load', return_value=sample_config):
-                    with patch('os.makedirs'):
-                        response = client.post("/config/backup")
-                        
-                        assert response.status_code == 200
-                        data = response.json()
-                        assert data["status"] == "backed_up"
-                        assert "backup_file" in data
-    
-    
-    def test_list_backups(self, client):
-        """Test listing configuration backups"""
-        with patch('os.path.exists', return_value=True):
-            with patch('os.listdir', return_value=[
-                'config_backup_2024_01_01_120000.yaml',
-                'config_backup_2024_01_02_120000.yaml'
-            ]):
-                response = client.get("/config/backups")
-                
-                assert response.status_code == 200
-                data = response.json()
-                assert len(data["backups"]) == 2
-                assert data["backups"][0]["filename"].startswith("config_backup_")
-    
-    
-    def test_restore_backup(self, client, sample_config):
-        """Test restoring configuration from backup"""
-        backup_file = "config_backup_2024_01_01_120000.yaml"
-        mock_file = mock_open(read_data=yaml.dump(sample_config))
-        
-        with patch('builtins.open', mock_file):
-            with patch('os.path.exists', return_value=True):
-                response = client.post(f"/config/restore/{backup_file}")
-                
-                assert response.status_code == 200
-                data = response.json()
-                assert data["status"] == "restored"
-                assert data["backup_file"] == backup_file
-    
-    
-    def test_get_config_schema(self, client):
-        """Test getting configuration schema"""
-        response = client.get("/config/schema")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "properties" in data
-        assert "app" in data["properties"]
-        assert "services" in data["properties"]
+            response = client.post("/api/config/import", json=import_data)
+            
+            assert response.status_code == 400
+            assert "Import failed" in response.json()["detail"]
