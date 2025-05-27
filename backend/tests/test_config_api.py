@@ -35,7 +35,15 @@ class TestConfigAPI:
     
     def test_update_user_preferences(self, client, mock_settings):
         """Test updating user preferences"""
-        # Mock user preferences as a proper object
+        # Create a proper data structure instead of Mock to avoid recursion
+        user_prefs_data = {
+            "preferred_models": ["llama2:7b"],
+            "custom_endpoints": [],
+            "disabled_services": [],
+            "manual_overrides": {}
+        }
+        
+        # Mock user preferences as a simple object that behaves like a model
         mock_user_prefs = Mock()
         mock_user_prefs.preferred_models = ["llama2:7b"]
         mock_user_prefs.custom_endpoints = []
@@ -45,16 +53,18 @@ class TestConfigAPI:
         mock_settings.save_config = Mock()
         
         with patch('app.api.config.settings', mock_settings):
-            with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
-                response = client.put("/api/config/preferences", json={
-                    "preferred_models": ["llama2:13b", "mistral:7b"]
-                })
-                
-                assert response.status_code == 200
-                data = response.json()
-                assert data["status"] == "updated"
-                assert "preferences" in data
-                mock_settings.save_config.assert_called_once()
+            # Mock the safe_model_dump function to return consistent data
+            with patch('app.api.config.safe_model_dump', return_value=user_prefs_data):
+                with patch('app.api.config.ws_manager.notify_config_change') as mock_notify:
+                    response = client.put("/api/config/preferences", json={
+                        "preferred_models": ["llama2:13b", "mistral:7b"]
+                    })
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["status"] == "updated"
+                    assert "preferences" in data
+                    mock_settings.save_config.assert_called_once()
     
     
     def test_add_service_override(self, client, mock_settings):
