@@ -24,6 +24,22 @@ def event_loop():
 
 
 @pytest.fixture
+def client():
+    """Create FastAPI test client"""
+    # Import here to avoid circular imports
+    from main import app
+    return TestClient(app)
+
+
+@pytest.fixture
+def mock_conversations():
+    """Mock conversations storage for testing"""
+    conversations = {}
+    with patch('app.api.chat.conversations', conversations):
+        yield conversations
+
+
+@pytest.fixture
 def mock_settings():
     """Mock settings for testing"""
     with patch('app.core.config.settings') as mock:
