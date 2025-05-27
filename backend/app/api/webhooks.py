@@ -16,6 +16,9 @@ router = APIRouter()
 webhook_service = WebhookService()
 ws_manager = WebSocketManager()
 
+# Test webhooks storage for compatibility
+webhooks = {}
+
 
 class WebhookCreate(BaseModel):
     """Webhook creation model"""
