@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch, Mock, mock_open
 import yaml
 import json
+from urllib.parse import quote
 
 
 class TestConfigAPI:
@@ -153,11 +154,14 @@ class TestConfigAPI:
         mock_settings.save_config = Mock()
         
         with patch('app.api.config.settings', mock_settings):
-            response = client.delete("/api/config/cors/http://localhost:8080")
+            # URL encode the origin to handle special characters like ://
+            encoded_origin = quote("http://localhost:8080", safe='')
+            response = client.delete(f"/api/config/cors/{encoded_origin}")
             
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "removed"
+            # The API should return the decoded origin
             assert data["origin"] == "http://localhost:8080"
     
     
