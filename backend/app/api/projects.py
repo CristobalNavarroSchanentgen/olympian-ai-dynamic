@@ -13,6 +13,9 @@ from ..core.config import settings
 router = APIRouter()
 project_service = ProjectService()
 
+# Test projects storage for compatibility
+projects = {}
+
 
 class ProjectCreate(BaseModel):
     """Project creation model"""
