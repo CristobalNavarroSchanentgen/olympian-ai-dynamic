@@ -2,7 +2,7 @@
 import pytest
 import asyncio
 from typing import AsyncGenerator, Dict, Any
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime
 import os
 import sys
@@ -25,10 +25,55 @@ def event_loop():
 
 
 @pytest.fixture
-def app():
+def mock_discovery_engine():
+    """Mock discovery engine for testing"""
+    with patch('app.core.discovery.discovery_engine') as mock:
+        mock.start = AsyncMock()
+        mock.stop = Mock()
+        mock.full_scan = AsyncMock(return_value={
+            "services": {
+                "ollama": {
+                    "endpoints": ["http://localhost:11434"],
+                    "models": [
+                        {"name": "llama2:7b", "size": 3826793472}
+                    ]
+                }
+            }
+        })
+        mock._running = True
+        yield mock
+
+
+@pytest.fixture
+def mock_service_manager():
+    """Mock service manager functions"""
+    with patch('app.core.service_manager.set_ollama_service') as mock_set_ollama, \
+         patch('app.core.service_manager.set_mcp_service') as mock_set_mcp, \
+         patch('app.core.service_manager.set_project_service') as mock_set_project:
+        yield {
+            'set_ollama_service': mock_set_ollama,
+            'set_mcp_service': mock_set_mcp,
+            'set_project_service': mock_set_project
+        }
+
+
+@pytest.fixture
+def app(mock_discovery_engine, mock_service_manager, mock_settings):
     """Create FastAPI app for testing"""
-    from main import app
-    return app
+    # Mock the services before importing main
+    with patch('app.services.ollama_service.OllamaService') as mock_ollama_cls, \
+         patch('app.services.mcp_service.MCPService') as mock_mcp_cls, \
+         patch('app.services.project_service.ProjectService') as mock_project_cls:
+        
+        # Configure service mocks
+        mock_ollama_cls.return_value.initialize = AsyncMock()
+        mock_ollama_cls.return_value.close = AsyncMock()
+        mock_mcp_cls.return_value.initialize = AsyncMock()
+        mock_mcp_cls.return_value.close = AsyncMock()
+        
+        # Now import main after mocking
+        from main import app
+        return app
 
 
 @pytest.fixture
@@ -92,6 +137,7 @@ def mock_ollama_service():
             "size": 3826793472,
             "modified_at": "2024-01-01T00:00:00Z"
         })
+        instance.get_active_endpoints = Mock(return_value=[])
         yield instance
 
 
