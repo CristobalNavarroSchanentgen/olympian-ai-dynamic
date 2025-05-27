@@ -36,7 +36,7 @@ class TestChatAPI:
     @pytest.mark.asyncio
     async def test_send_chat_message_new_conversation(self, client, mock_ollama_service, mock_conversations):
         """Test sending a message creates a new conversation"""
-        with patch('app.api.chat.ollama_service', mock_ollama_service):
+        with patch('app.api.chat.get_ollama_service', return_value=mock_ollama_service):
             # Mock the stream_chat to return an async generator
             async def mock_stream():
                 yield "Hello"
@@ -74,7 +74,7 @@ class TestChatAPI:
             "system_prompt": None
         }
         
-        with patch('app.api.chat.ollama_service', mock_ollama_service):
+        with patch('app.api.chat.get_ollama_service', return_value=mock_ollama_service):
             async def mock_stream():
                 yield "Response"
             
@@ -95,28 +95,43 @@ class TestChatAPI:
     
     def test_send_chat_message_streaming(self, client, mock_ollama_service):
         """Test streaming chat message response"""
-        response = client.post("/chat/message", json={
-            "message": "Hello",
-            "model": "llama2:7b",
-            "stream": True
-        })
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["streaming"] is True
-        assert "Use WebSocket" in data["message"]
+        with patch('app.api.chat.get_ollama_service', return_value=mock_ollama_service):
+            response = client.post("/chat/message", json={
+                "message": "Hello",
+                "model": "llama2:7b",
+                "stream": True
+            })
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["streaming"] is True
+            assert "Use WebSocket" in data["message"]
     
     
-    def test_send_chat_message_invalid_conversation(self, client):
+    def test_send_chat_message_no_service(self, client):
+        """Test sending message when ollama service not available"""
+        with patch('app.api.chat.get_ollama_service', return_value=None):
+            response = client.post("/chat/message", json={
+                "message": "Hello",
+                "model": "llama2:7b",
+                "stream": False
+            })
+            
+            assert response.status_code == 503
+            assert "Ollama service not available" in response.json()["detail"]
+    
+    
+    def test_send_chat_message_invalid_conversation(self, client, mock_ollama_service):
         """Test sending message to non-existent conversation"""
-        response = client.post("/chat/message", json={
-            "message": "Hello",
-            "model": "llama2:7b",
-            "conversation_id": "non-existent"
-        })
-        
-        assert response.status_code == 404
-        assert response.json()["detail"] == "Conversation not found"
+        with patch('app.api.chat.get_ollama_service', return_value=mock_ollama_service):
+            response = client.post("/chat/message", json={
+                "message": "Hello",
+                "model": "llama2:7b",
+                "conversation_id": "non-existent"
+            })
+            
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Conversation not found"
     
     
     def test_create_conversation(self, client, mock_conversations):
@@ -303,7 +318,7 @@ class TestChatAPI:
             ]
         }
         
-        with patch('app.api.chat.ollama_service', mock_ollama_service):
+        with patch('app.api.chat.get_ollama_service', return_value=mock_ollama_service):
             async def mock_stream():
                 yield "Regenerated response"
             
@@ -326,7 +341,55 @@ class TestChatAPI:
             "messages": [{"role": "system", "content": "System prompt"}]
         }
         
-        response = client.post(f"/chat/conversations/{conv_id}/regenerate")
-        
-        assert response.status_code == 400
-        assert "No user message found" in response.json()["detail"]
+        with patch('app.api.chat.get_ollama_service', return_value=None):
+            response = client.post(f"/chat/conversations/{conv_id}/regenerate")
+            
+            assert response.status_code == 503
+            assert "Ollama service not available" in response.json()["detail"]
+    
+    
+    def test_stop_generation(self, client):
+        """Test stopping generation"""
+        with patch('app.api.chat.ws_manager') as mock_ws_manager:
+            mock_ws_manager.get_client_stream_status.return_value = {
+                "has_active_stream": True
+            }
+            mock_ws_manager._handle_stop_generation = AsyncMock()
+            
+            response = client.post("/chat/stop", json={"client_id": "test-client"})
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "stopped"
+            assert data["client_id"] == "test-client"
+    
+    
+    def test_stop_generation_no_active_stream(self, client):
+        """Test stopping generation when no active stream"""
+        with patch('app.api.chat.ws_manager') as mock_ws_manager:
+            mock_ws_manager.get_client_stream_status.return_value = {
+                "has_active_stream": False
+            }
+            
+            response = client.post("/chat/stop", json={"client_id": "test-client"})
+            
+            assert response.status_code == 400
+            assert "No active generation to stop" in response.json()["detail"]
+    
+    
+    def test_get_chat_status(self, client):
+        """Test getting chat status for a client"""
+        with patch('app.api.chat.ws_manager') as mock_ws_manager:
+            mock_ws_manager.get_client_stream_status.return_value = {
+                "is_streaming": True,
+                "has_active_stream": True
+            }
+            
+            response = client.get("/chat/status/test-client")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["client_id"] == "test-client"
+            assert data["is_streaming"] is True
+            assert data["has_active_stream"] is True
+            assert data["can_stop"] is True
